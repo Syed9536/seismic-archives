@@ -1,34 +1,41 @@
 "use client";
 
-import { useState } from "react";
-import { useAccount } from "wagmi";
+import { useState, useEffect } from "react";
 import { supabase } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
 import { UploadCloud, Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
 export default function UploadPage() {
-  const { address, isConnected } = useAccount();
   const router = useRouter();
+  const [user, setUser] = useState<any>(null);
   
   const [file, setFile] = useState<File | null>(null);
   const [desc, setDesc] = useState("");
   const [type, setType] = useState("meme");
-  const [link, setLink] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    // Check karo user login hai ya nahi
+    const getUser = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) setUser(user);
+        else router.push("/"); // Login nahi toh home bhejo
+    };
+    getUser();
+  }, [router]);
+
   const handleUpload = async () => {
-    if (!file || !isConnected || !address) {
-      alert("Please connect wallet and select a file!");
+    if (!file || !user) {
+      alert("Please select a file!");
       return;
     }
 
     setLoading(true);
-
     try {
-      // 1. Upload Image to Supabase Storage
-      const fileName = `${Date.now()}-${file.name}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      // 1. Upload Image
+      const fileName = `${Date.now()}-${file.name.replace(/\s/g, '')}`;
+      const { error: uploadError } = await supabase.storage
         .from("uploads")
         .upload(fileName, file);
 
@@ -39,23 +46,24 @@ export default function UploadPage() {
         .from("uploads")
         .getPublicUrl(fileName);
 
-      // 3. Save Data to Table
+      // 3. Save to Database (With User ID)
       const { error: dbError } = await supabase
         .from("archives")
         .insert([
           {
-            wallet_address: address,
+            user_id: user.id, // <--- YEH ZAROORI HAI LINK KARNE KE LIYE
+            wallet_address: "Discord-User", // Abhi ke liye placeholder
             content_type: type,
             description: desc,
             image_url: publicUrl,
-            x_link: link,
           },
         ]);
 
       if (dbError) throw dbError;
 
-      alert("Upload Successful! 🎉");
-      router.push("/"); // Home pe wapas bhej do
+      alert("Upload Successful! Redirecting to your profile...");
+      // Upload ke baad seedha Profile Page par bhejo
+      router.push(`/u/${user.id}`);
 
     } catch (error: any) {
       console.error(error);
@@ -75,16 +83,9 @@ export default function UploadPage() {
 
         <h1 className="text-3xl font-bold mb-8">Upload Artifact 📂</h1>
 
-        {!isConnected ? (
-          <div className="text-red-500 text-center border border-red-900/50 p-4 rounded bg-red-900/10">
-            ⚠️ Please Connect Wallet First (Top Right)
-          </div>
-        ) : (
-          <div className="space-y-6">
-            
-            {/* File Input */}
+        <div className="space-y-6">
             <div>
-              <label className="block text-gray-400 mb-2 text-sm">Upload Image (Meme/Art)</label>
+              <label className="block text-gray-400 mb-2 text-sm">Upload Image</label>
               <input 
                 type="file" 
                 accept="image/*"
@@ -93,7 +94,6 @@ export default function UploadPage() {
               />
             </div>
 
-            {/* Content Type */}
             <div>
               <label className="block text-gray-400 mb-2 text-sm">Type</label>
               <select 
@@ -103,35 +103,21 @@ export default function UploadPage() {
               >
                 <option value="meme">Meme</option>
                 <option value="art">Art</option>
-                <option value="thread">Thread Screenshot</option>
+                <option value="thread">Proof of Work (Screenshot)</option>
               </select>
             </div>
 
-            {/* Description */}
             <div>
               <label className="block text-gray-400 mb-2 text-sm">Description</label>
               <textarea 
                 rows={3}
-                placeholder="What is this about?"
+                placeholder="Describe your contribution..."
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
                 className="w-full bg-black border border-gray-700 rounded p-3 focus:border-green-500 outline-none"
               />
             </div>
 
-            {/* X Link */}
-            <div>
-              <label className="block text-gray-400 mb-2 text-sm">X (Twitter) Link (Optional)</label>
-              <input 
-                type="text" 
-                placeholder="https://x.com/..."
-                value={link}
-                onChange={(e) => setLink(e.target.value)}
-                className="w-full bg-black border border-gray-700 rounded p-3 focus:border-green-500 outline-none"
-              />
-            </div>
-
-            {/* Submit Button */}
             <button
               onClick={handleUpload}
               disabled={loading}
@@ -140,9 +126,7 @@ export default function UploadPage() {
               {loading ? <Loader2 className="animate-spin" /> : <UploadCloud />} 
               {loading ? "UPLOADING..." : "ARCHIVE NOW"}
             </button>
-
           </div>
-        )}
       </div>
     </div>
   );

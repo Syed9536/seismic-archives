@@ -125,10 +125,10 @@ export default function Home() {
           </p>
         </div>
 
-        {/* CARDS */}
+        {/* CARDS GRID */}
         <div className="grid md:grid-cols-2 gap-8">
           
-          {/* LOGIC CARD */}
+          {/* LOGIC CARD (Left Side) */}
           {authLoading ? (
              <div className="border border-green-500/30 bg-green-900/10 p-10 rounded-2xl flex flex-col items-center justify-center h-full min-h-[300px] animate-pulse">
                 <Loader2 className="animate-spin text-green-400 w-16 h-16 mb-6" />
@@ -163,7 +163,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* UPLOAD CARD */}
+          {/* UPLOAD CARD (Right Side) */}
           <Link href="/upload">
             <div className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-green-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
               <div>
@@ -175,6 +175,17 @@ export default function Home() {
               <span className="text-green-400 text-sm font-bold flex items-center gap-2">START UPLOAD &rarr;</span>
             </div>
           </Link>
+
+          {/* --- NEW SECTION: VIEW PROFILE LINK --- */}
+          {/* Ye sirf tab dikhega jab user login hoga */}
+          {user && (
+            <Link href={`/u/${user.id}`} className="md:col-span-2 text-center mt-4">
+                <div className="inline-flex items-center gap-2 text-gray-400 hover:text-green-500 transition border-b border-transparent hover:border-green-500 pb-1">
+                View My Public Portfolio &rarr;
+                </div>
+            </Link>
+          )}
+
         </div>
       </main>
     </div>
