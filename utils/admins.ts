@@ -1,6 +1,6 @@
 // Yahan Team ke Wallet Addresses daal (Comma se separate karke)
 export const ADMIN_WALLETS = [
-    "0x70...TeraWalletAddress", 
+    "0xADb9577555E75EbC5f22da1aE28482be344b2081", 
     "0xAbc...Admin2Address",    
     "0x123...Admin3Address"
 ].map(addr => addr.toLowerCase()); // Auto-convert to lowercase logic
