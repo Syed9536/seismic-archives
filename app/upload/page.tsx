@@ -58,7 +58,7 @@ export default function UploadPage() {
 
       if (dbError) throw dbError;
 
-      alert("Archived Successfully! 🔒");
+      alert("Saved Successfully! 🔒");
       router.push(`/u/${user.id}`);
 
     } catch (error: any) {
