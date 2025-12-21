@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabase/client";
 import { useAccount } from 'wagmi'; 
-import { checkIsAdmin } from "@/utils/admins"; // IMP: Admin check utility
-import { Share2, ShieldCheck, MessageSquare, Palette, Smile, Grid, ExternalLink, Lock, Eye, ShieldAlert } from "lucide-react";
+import { ConnectButton } from '@rainbow-me/rainbowkit'; // Wallet Button
+import { checkIsAdmin } from "@/utils/admins"; 
+import { Share2, ShieldCheck, MessageSquare, Palette, Smile, Grid, ExternalLink, Lock, Eye, ShieldAlert, Disc } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -19,12 +20,14 @@ export default function UserProfile() {
   const [copySuccess, setCopySuccess] = useState(false);
 
   useEffect(() => {
+    // 1. Check Auth (Discord User)
     const checkUser = async () => {
         const { data: { user } } = await supabase.auth.getUser();
         setCurrentUser(user);
     };
     checkUser();
 
+    // 2. Fetch Data
     const fetchArtifacts = async () => {
       const id = params.id as string;
       let query = supabase.from("archives").select("*").order("created_at", { ascending: false });
@@ -43,53 +46,67 @@ export default function UserProfile() {
     if (params.id) fetchArtifacts();
   }, [params.id]);
 
+  // --- ADMIN LOGIN FUNCTION ---
+  const handleDiscordLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'discord',
+      options: { redirectTo: window.location.href }, // Login ke baad wapas yahi aayega
+    });
+  };
+
   const copyLink = () => {
     navigator.clipboard.writeText(window.location.href);
     setCopySuccess(true);
     setTimeout(() => setCopySuccess(false), 2000);
   };
 
-  // --- 🔐 THE FINAL SECURITY LOGIC ---
-  
-  // 1. Is the Viewer the Owner?
+  // --- ACCESS LOGIC ---
   const isOwner = (address && address.toLowerCase() === (params.id as string).toLowerCase()) || 
                   (currentUser && currentUser.id === params.id);
 
-  // 2. Is the Viewer a Whitelisted Admin? (Checks both Wallet & Discord)
   const isAdmin = checkIsAdmin(address, currentUser?.user_metadata?.provider_id);
-
-  // 3. ACCESS GRANTED?
   const hasAccess = isOwner || isAdmin;
-
-  // 4. ARE WE LOGGED IN AT ALL? (For the empty state check)
   const isLoggedIn = address || currentUser;
-
 
   const filteredArtifacts = activeTab === "all" ? artifacts : artifacts.filter(item => item.content_type === activeTab);
 
   return (
     <div className="min-h-screen bg-black text-white font-mono selection:bg-green-500 selection:text-black">
       
-      <nav className="border-b border-green-900/50 p-6 flex justify-between items-center backdrop-blur-sm sticky top-0 z-50">
+      {/* NAVBAR */}
+      <nav className="border-b border-green-900/50 p-6 flex flex-col md:flex-row justify-between items-center backdrop-blur-sm sticky top-0 z-50 gap-4">
         <Link href="/" className="flex items-center gap-2">
           <ShieldCheck className="text-green-500 w-8 h-8" />
           <span className="text-2xl font-bold tracking-tighter">SEISMIC <span className="text-green-500">ARCHIVES</span></span>
         </Link>
-        <div className="flex gap-4">
-             {isAdmin && (
-                <Link href="/admin" className="hidden md:flex items-center gap-2 text-xs font-bold bg-red-900/20 text-red-500 border border-red-900 px-3 py-2 rounded hover:bg-red-900/40">
-                    <ShieldAlert size={14} /> ADMIN CONSOLE
-                </Link>
+        
+        {/* --- ACTIONS AREA --- */}
+        <div className="flex items-center gap-4">
+             
+             {/* AGAR BANDA LOGGED IN NAHI HAI TOH YE DIKHAO (Admin Login Options) */}
+             {!isLoggedIn && (
+                <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-xl border border-gray-800">
+                    <ConnectButton showBalance={false} accountStatus="avatar" chainStatus="none" />
+                    <button onClick={handleDiscordLogin} className="bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-lg font-bold text-xs flex items-center gap-2 transition">
+                        <Disc size={16} /> ADMIN SYNC
+                    </button>
+                </div>
              )}
-            <button onClick={copyLink} className="bg-green-900/20 text-green-400 border border-green-900 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-900/40 transition text-sm font-bold">
-            {copySuccess ? "COPIED! ✅" : <><Share2 size={16} /> SHARE IDENTITY</>}
+
+             {isAdmin && (
+                <span className="hidden md:flex items-center gap-2 text-xs font-bold bg-red-900/20 text-red-500 border border-red-900 px-3 py-2 rounded animate-pulse">
+                    <ShieldAlert size={14} /> AUDITOR ACTIVE
+                </span>
+             )}
+            
+            <button onClick={copyLink} className="bg-green-900/20 text-green-400 border border-green-900 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-900/40 transition text-sm font-bold h-[40px]">
+                {copySuccess ? "COPIED! ✅" : <><Share2 size={16} /> SHARE</>}
             </button>
         </div>
       </nav>
       
       <main className="max-w-6xl mx-auto p-8 mt-4">
         
-        {/* --- HEADER --- */}
         <div className="mb-8 text-center md:text-left">
             <h1 className="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-500">
               SEISMIC LEDGER
@@ -98,11 +115,11 @@ export default function UserProfile() {
               <span className="text-green-500 animate-pulse">●</span> Node ID: <span className="font-mono text-gray-500">{params.id}</span>
             </p>
             
-            {/* DEBUG BADGES (Who is viewing?) */}
+            {/* STATUS BADGES */}
             <div className="mt-4 flex flex-col md:flex-row gap-2 justify-center md:justify-start">
                 {!isLoggedIn && (
                     <span className="text-xs font-bold text-gray-500 bg-gray-900 px-3 py-1 rounded flex items-center gap-1 border border-gray-800">
-                        <Lock size={12} /> ANONYMOUS VIEWER (ENCRYPTED VIEW)
+                        <Lock size={12} /> ENCRYPTED VIEW (Connect WL Wallet/Discord to Decrypt)
                     </span>
                 )}
                 {isOwner && (
@@ -118,7 +135,7 @@ export default function UserProfile() {
             </div>
         </div>
 
-        {/* --- CONTENT GRID --- */}
+        {/* CONTENT GRID */}
         {loading ? (
             <div className="flex flex-col items-center justify-center mt-20 space-y-4">
                 <div className="w-16 h-16 border-4 border-green-900 border-t-green-500 rounded-full animate-spin"></div>
@@ -132,7 +149,7 @@ export default function UserProfile() {
             <div className="columns-1 md:columns-2 lg:columns-3 gap-6 space-y-6">
                 {filteredArtifacts.map((item) => (
                     
-                    // --- ACCESS LOGIC: Show Content IF (Not Encrypted) OR (User Has Access) ---
+                    // --- FINAL LOGIC: Encrypted OR (Owner/Admin) ---
                     (!item.is_encrypted || hasAccess) ? (
                         
                         // 🔓 UNLOCKED CARD
@@ -161,14 +178,14 @@ export default function UserProfile() {
 
                     ) : (
                         
-                        // 🔒 LOCKED CARD (For Random Users or Non-WL Team)
+                        // 🔒 LOCKED CARD
                         <div key={item.id} className="break-inside-avoid bg-black border border-gray-800 p-6 flex flex-col items-center justify-center min-h-[250px] relative overflow-hidden group">
                             <div className="absolute inset-0 bg-[url('https://media.giphy.com/media/U3qYN8S0j3bpK/giphy.gif')] opacity-5 grayscale bg-cover"></div>
                             
                             <Lock size={40} className="text-gray-600 mb-4" />
                             <h3 className="text-gray-500 font-bold font-mono tracking-widest">ENCRYPTED BLOCK</h3>
                             <p className="text-xs text-gray-700 mt-2 text-center max-w-[200px]">
-                                Content hidden. Connect a Whitelisted Wallet/Discord to decrypt.
+                                Content hidden. <br/><span className="text-green-500">Connect Whitelisted Wallet/Discord above to decrypt.</span>
                             </p>
                             
                             <div className="mt-6 w-full border-t border-gray-800 pt-4">
