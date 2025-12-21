@@ -175,7 +175,7 @@ export default function Home() {
                   <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><UploadCloud size={100} /></div>
                   <div className="bg-green-500/10 w-fit p-3 rounded-xl mb-6"><UploadCloud className="text-green-400 w-8 h-8" /></div>
                   <h3 className="text-2xl font-bold mb-2 group-hover:text-green-400 transition-colors">Manual Upload</h3>
-                  <p className="text-gray-400 mb-6">Upload your best work via Wallet or Discord.</p>
+                  <p className="text-gray-400 mb-6">Upload your contribution and save to wallet.</p>
                 </div>
                 <span className="text-green-400 text-sm font-bold flex items-center gap-2">START UPLOAD &rarr;</span>
               </div>
