@@ -8,7 +8,8 @@ import { useParams } from "next/navigation";
 
 // SEISMIC SERVER ID (Yahan Seismic ka Server ID daalna padega)
 // Agar ID nahi pata toh browser mein Discord khol ke Seismic server right click -> "Copy ID" kar le.
-const SEISMIC_GUILD_ID = "1343751437087150113"; // <--- CHANGE THIS TO REAL ID
+const SEISMIC_GUILD_ID = "1343751435711414362"; // <--- CHANGE THIS TO REAL ID
+const SEISMIC_CHANNEL_ID = "1343751437087150113"; // <--- Yahan wo ID paste kar jo abhi copy ki (e.g. 987654...)
 
 export default function UserProfile() {
   const params = useParams();
