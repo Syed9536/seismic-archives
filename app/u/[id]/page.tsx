@@ -2,29 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabase/client";
-import { Share2, ShieldCheck, MessageCircle, ExternalLink } from "lucide-react";
+import { Share2, ShieldCheck, MessageSquare, Palette, Smile, Grid } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-
-// --- YAHAN GADBAD THI (Ab Fixed hai) ---
-const SEISMIC_GUILD_ID = "1343751435711414362"; // Ye teri Server ID hai (Sahi hai)
-const SEISMIC_CHANNEL_ID = "1343751437087150113"; // <--- ⚠️ YAHAN APNI CHANNEL ID DAAL
 
 export default function UserProfile() {
   const params = useParams();
   const [artifacts, setArtifacts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [discordId, setDiscordId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("all"); // 'all', 'chat', 'art', 'meme'
   const [copySuccess, setCopySuccess] = useState(false);
 
   useEffect(() => {
     const fetchArtifacts = async () => {
       const { data } = await supabase.from("archives").select("*").eq("user_id", params.id).order("created_at", { ascending: false });
-      
-      if (data && data.length > 0) {
-        setArtifacts(data);
-        if (data[0].discord_id) setDiscordId(data[0].discord_id);
-      }
+      if (data) setArtifacts(data);
       setLoading(false);
     };
     if (params.id) fetchArtifacts();
@@ -36,47 +28,94 @@ export default function UserProfile() {
     setTimeout(() => setCopySuccess(false), 2000);
   };
 
+  // Filter Logic
+  const filteredArtifacts = activeTab === "all" 
+    ? artifacts 
+    : artifacts.filter(item => item.content_type === activeTab);
+
   return (
     <div className="min-h-screen bg-black text-white font-mono">
+      
+      {/* NAVBAR */}
       <nav className="border-b border-green-900/50 p-6 flex justify-between items-center backdrop-blur-sm sticky top-0 z-50">
-        <Link href="/" className="flex items-center gap-2"><ShieldCheck className="text-green-500 w-8 h-8" /><span className="text-2xl font-bold tracking-tighter">SEISMIC <span className="text-green-500">ARCHIVES</span></span></Link>
-        <button onClick={copyLink} className="bg-green-900/20 text-green-400 border border-green-900 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-900/40 transition">
+        <Link href="/" className="flex items-center gap-2">
+          <ShieldCheck className="text-green-500 w-8 h-8" />
+          <span className="text-2xl font-bold tracking-tighter">SEISMIC <span className="text-green-500">ARCHIVES</span></span>
+        </Link>
+        <button onClick={copyLink} className="bg-green-900/20 text-green-400 border border-green-900 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-900/40 transition text-sm font-bold">
           {copySuccess ? "COPIED! ✅" : <><Share2 size={16} /> SHARE PROFILE</>}
         </button>
       </nav>
       
       <main className="max-w-6xl mx-auto p-8 mt-4">
-        <div className="mb-12 border-b border-gray-800 pb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-            <div>
-                <h1 className="text-4xl font-bold mb-2 text-white">Proof of Contribution</h1>
-                <p className="text-gray-400">User ID: <span className="text-green-500 font-mono">{params.id}</span></p>
-            </div>
-            
-            {/* --- MAGIC DISCORD BUTTON --- */}
-            {discordId && (
-                <a 
-                  href={`https://discord.com/channels/${SEISMIC_GUILD_ID}/${SEISMIC_CHANNEL_ID}?search=from%3A${discordId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition shadow-[0_0_20px_rgba(79,70,229,0.4)]"
-                >
-                    <MessageCircle size={20} />
-                    <span>View Seismic History</span>
-                    <ExternalLink size={14} className="opacity-50" />
-                </a>
-            )}
+        
+        {/* HEADER */}
+        <div className="mb-8 text-center md:text-left">
+            <h1 className="text-4xl font-bold mb-2 text-white">Proof of Contribution</h1>
+            <p className="text-gray-400">Vault ID: <span className="text-green-500 font-mono">{params.id}</span></p>
         </div>
 
-        {loading ? <div className="text-center text-green-500 animate-pulse mt-20">Loading...</div> : artifacts.length === 0 ? <div className="text-center py-20 bg-gray-900/30 rounded-2xl border border-gray-800"><p className="text-gray-400">No artifacts yet.</p></div> : 
+        {/* --- TABS (SECTIONS) --- */}
+        <div className="flex flex-wrap gap-4 mb-10 border-b border-gray-800 pb-4">
+            <button 
+                onClick={() => setActiveTab("all")} 
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition ${activeTab === "all" ? "bg-white text-black" : "bg-gray-900 text-gray-400 hover:text-white"}`}
+            >
+                <Grid size={16} /> ALL
+            </button>
+            <button 
+                onClick={() => setActiveTab("chat")} 
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition ${activeTab === "chat" ? "bg-green-600 text-black" : "bg-gray-900 text-gray-400 hover:text-green-400"}`}
+            >
+                <MessageSquare size={16} /> CHATS
+            </button>
+            <button 
+                onClick={() => setActiveTab("art")} 
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition ${activeTab === "art" ? "bg-purple-600 text-white" : "bg-gray-900 text-gray-400 hover:text-purple-400"}`}
+            >
+                <Palette size={16} /> ARTS
+            </button>
+            <button 
+                onClick={() => setActiveTab("meme")} 
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition ${activeTab === "meme" ? "bg-yellow-500 text-black" : "bg-gray-900 text-gray-400 hover:text-yellow-400"}`}
+            >
+                <Smile size={16} /> MEMES
+            </button>
+        </div>
+
+        {/* CONTENT GRID */}
+        {loading ? (
+            <div className="text-center text-green-500 animate-pulse mt-20">Accessing Vault...</div>
+        ) : filteredArtifacts.length === 0 ? (
+            <div className="text-center py-20 bg-gray-900/30 rounded-2xl border border-gray-800">
+                <p className="text-gray-400">No records found in this section.</p>
+            </div>
+        ) : (
             <div className="columns-1 md:columns-2 lg:columns-3 gap-6 space-y-6">
-                {artifacts.map((item) => (
-                    <div key={item.id} className="break-inside-avoid bg-gray-900/40 border border-gray-800 rounded-xl overflow-hidden hover:border-green-500/50 transition">
-                        <img src={item.image_url} className="w-full h-auto object-cover" />
-                        <div className="p-4"><p className="text-gray-300 text-sm">{item.description}</p></div>
+                {filteredArtifacts.map((item) => (
+                    <div key={item.id} className="break-inside-avoid bg-gray-900/40 border border-gray-800 rounded-xl overflow-hidden hover:border-green-500/50 transition duration-300">
+                        
+                        {/* Image Display */}
+                        <div className="relative">
+                            <img src={item.image_url} className="w-full h-auto object-cover" />
+                            <div className="absolute top-2 right-2">
+                                {/* Badge based on type */}
+                                {item.content_type === 'chat' && <span className="bg-green-600 text-black text-xs font-bold px-2 py-1 rounded shadow">CHAT</span>}
+                                {item.content_type === 'art' && <span className="bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded shadow">ART</span>}
+                                {item.content_type === 'meme' && <span className="bg-yellow-500 text-black text-xs font-bold px-2 py-1 rounded shadow">MEME</span>}
+                            </div>
+                        </div>
+
+                        <div className="p-4">
+                            <p className="text-gray-300 text-sm leading-relaxed">{item.description}</p>
+                            <div className="mt-4 pt-4 border-t border-gray-800 flex justify-between items-center text-xs text-gray-500">
+                                <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                            </div>
+                        </div>
                     </div>
                 ))}
             </div>
-        }
+        )}
       </main>
     </div>
   );
