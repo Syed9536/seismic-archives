@@ -6,10 +6,9 @@ import { Share2, ShieldCheck, MessageCircle, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-// SEISMIC SERVER ID (Yahan Seismic ka Server ID daalna padega)
-// Agar ID nahi pata toh browser mein Discord khol ke Seismic server right click -> "Copy ID" kar le.
-const SEISMIC_GUILD_ID = "1343751435711414362"; // <--- CHANGE THIS TO REAL ID
-const SEISMIC_CHANNEL_ID = "1343751437087150113"; // <--- Yahan wo ID paste kar jo abhi copy ki (e.g. 987654...)
+// --- YAHAN GADBAD THI (Ab Fixed hai) ---
+const SEISMIC_GUILD_ID = "1343751435711414362"; // Ye teri Server ID hai (Sahi hai)
+const SEISMIC_CHANNEL_ID = "1343751437087150113"; // <--- ⚠️ YAHAN APNI CHANNEL ID DAAL
 
 export default function UserProfile() {
   const params = useParams();
@@ -24,7 +23,6 @@ export default function UserProfile() {
       
       if (data && data.length > 0) {
         setArtifacts(data);
-        // Pehle artifact se discord_id utha lo
         if (data[0].discord_id) setDiscordId(data[0].discord_id);
       }
       setLoading(false);
@@ -54,10 +52,9 @@ export default function UserProfile() {
                 <p className="text-gray-400">User ID: <span className="text-green-500 font-mono">{params.id}</span></p>
             </div>
             
-            {/* --- MAGIC DISCORD BUTTON (UPDATED) --- */}
+            {/* --- MAGIC DISCORD BUTTON --- */}
             {discordId && (
                 <a 
-                  // Link mein ab Guild ID + Channel ID dono hain 👇
                   href={`https://discord.com/channels/${SEISMIC_GUILD_ID}/${SEISMIC_CHANNEL_ID}?search=from%3A${discordId}`}
                   target="_blank"
                   rel="noopener noreferrer"
