@@ -2,20 +2,30 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabase/client";
-import { Share2, ShieldCheck } from "lucide-react";
+import { Share2, ShieldCheck, MessageCircle, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+
+// SEISMIC SERVER ID (Yahan Seismic ka Server ID daalna padega)
+// Agar ID nahi pata toh browser mein Discord khol ke Seismic server right click -> "Copy ID" kar le.
+const SEISMIC_GUILD_ID = "123456789"; // <--- CHANGE THIS TO REAL ID
 
 export default function UserProfile() {
   const params = useParams();
   const [artifacts, setArtifacts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [discordId, setDiscordId] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
 
   useEffect(() => {
     const fetchArtifacts = async () => {
       const { data } = await supabase.from("archives").select("*").eq("user_id", params.id).order("created_at", { ascending: false });
-      if (data) setArtifacts(data);
+      
+      if (data && data.length > 0) {
+        setArtifacts(data);
+        // Pehle artifact se discord_id utha lo
+        if (data[0].discord_id) setDiscordId(data[0].discord_id);
+      }
       setLoading(false);
     };
     if (params.id) fetchArtifacts();
@@ -35,11 +45,29 @@ export default function UserProfile() {
           {copySuccess ? "COPIED! ✅" : <><Share2 size={16} /> SHARE PROFILE</>}
         </button>
       </nav>
+      
       <main className="max-w-6xl mx-auto p-8 mt-4">
-        <div className="mb-12 border-b border-gray-800 pb-8">
-            <h1 className="text-4xl font-bold mb-2 text-white">Proof of Contribution</h1>
-            <p className="text-gray-400">User ID: <span className="text-green-500 font-mono">{params.id}</span></p>
+        <div className="mb-12 border-b border-gray-800 pb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+            <div>
+                <h1 className="text-4xl font-bold mb-2 text-white">Proof of Contribution</h1>
+                <p className="text-gray-400">User ID: <span className="text-green-500 font-mono">{params.id}</span></p>
+            </div>
+            
+            {/* --- MAGIC DISCORD BUTTON --- */}
+            {discordId && (
+                <a 
+                  href={`https://discord.com/channels/${SEISMIC_GUILD_ID}?search=from%3A${discordId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition shadow-[0_0_20px_rgba(79,70,229,0.4)]"
+                >
+                    <MessageCircle size={20} />
+                    <span>View Seismic History</span>
+                    <ExternalLink size={14} className="opacity-50" />
+                </a>
+            )}
         </div>
+
         {loading ? <div className="text-center text-green-500 animate-pulse mt-20">Loading...</div> : artifacts.length === 0 ? <div className="text-center py-20 bg-gray-900/30 rounded-2xl border border-gray-800"><p className="text-gray-400">No artifacts yet.</p></div> : 
             <div className="columns-1 md:columns-2 lg:columns-3 gap-6 space-y-6">
                 {artifacts.map((item) => (
