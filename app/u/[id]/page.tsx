@@ -71,10 +71,15 @@ export default function UserProfile() {
     return () => subscription.unsubscribe();
   }, [params.id]);
 
+  // --- ADMIN LOGIN FUNCTION (UPDATED) ---
   const handleDiscordLogin = async () => {
+    // 1. Current Location Save karo (Return Ticket)
+    localStorage.setItem('seismic_return_url', window.location.pathname);
+    
+    // 2. Home Page par redirect karo (Kyunki wo Whitelisted hai)
     await supabase.auth.signInWithOAuth({
       provider: 'discord',
-      options: { redirectTo: window.location.href }, 
+      options: { redirectTo: window.location.origin }, 
     });
   };
 

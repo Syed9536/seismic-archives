@@ -16,8 +16,12 @@ export default function Home() {
     const handleAuth = async () => {
       setAuthLoading(true);
 
+      // --- 👇 STEP 1: CHECK URL FOR TOKEN (AND RETURN TICKET) 👇 ---
       const hash = window.location.hash;
+
       if (hash && hash.includes("access_token")) {
+        console.log("🔓 Token Found in URL! Manually setting session...");
+        
         const params = new URLSearchParams(hash.substring(1));
         const accessToken = params.get("access_token");
         const refreshToken = params.get("refresh_token");
@@ -29,7 +33,19 @@ export default function Home() {
           });
 
           if (!error && data.session) {
+            console.log("✅ Manual Login Success:", data.session.user.email);
             setUser(data.session.user);
+            
+            // --- 🎫 RETURN TICKET LOGIC ---
+            const returnUrl = localStorage.getItem('seismic_return_url');
+            if (returnUrl) {
+                console.log("🎫 Return Ticket Found! Redirecting to:", returnUrl);
+                localStorage.removeItem('seismic_return_url'); // Clear ticket
+                window.location.href = returnUrl; // Send back to Profile
+                return; // Stop execution here
+            }
+            // -----------------------------
+
             setAuthLoading(false);
             window.history.replaceState(null, '', window.location.pathname);
             return;
@@ -37,6 +53,7 @@ export default function Home() {
         }
       }
 
+      // --- STEP 2: FALLBACK (NORMAL SESSION CHECK) ---
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         setUser(session.user);
@@ -61,6 +78,7 @@ export default function Home() {
 
   const handleDiscordLogin = async () => {
     setAuthLoading(true);
+    // Standard login from Home page (stays on Home)
     await supabase.auth.signInWithOAuth({
       provider: 'discord',
       options: { redirectTo: window.location.origin },
