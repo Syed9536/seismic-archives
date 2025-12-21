@@ -17,7 +17,7 @@ export default function UploadPage() {
   const [desc, setDesc] = useState("");
   const [msgLink, setMsgLink] = useState("");
   const [type, setType] = useState("chat");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const getUser = async () => {
