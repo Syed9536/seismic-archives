@@ -3,10 +3,12 @@
 import { supabase } from "@/utils/supabase/client";
 import { useState, useEffect } from "react";
 import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { useAccount } from 'wagmi'; // <--- WALLET CHECK KE LIYE IMPORT
 import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 export default function Home() {
+  const { address, isConnected } = useAccount(); // <--- WALLET STATUS
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
@@ -15,19 +17,16 @@ export default function Home() {
       setAuthLoading(true);
 
       // --- STEP 1: KYA URL MEIN TOKEN HAI? (MANUAL CHECK) ---
-      // Hum khud hash parsing karenge
       const hash = window.location.hash;
       
       if (hash && hash.includes("access_token")) {
         console.log("🔓 Token Found in URL! Manually setting session...");
         
-        // Hash se access_token aur refresh_token nikaalo
-        const params = new URLSearchParams(hash.substring(1)); // '#' hata ke parse karo
+        const params = new URLSearchParams(hash.substring(1));
         const accessToken = params.get("access_token");
         const refreshToken = params.get("refresh_token");
 
         if (accessToken) {
-          // Supabase ko FORCE karo login karne ke liye
           const { data, error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken || "",
@@ -37,20 +36,16 @@ export default function Home() {
             console.log("✅ Manual Login Success:", data.session.user.email);
             setUser(data.session.user);
             setAuthLoading(false);
-            // URL saaf karo
             window.history.replaceState(null, '', window.location.pathname);
-            return; // Kaam ho gaya, wapas jao
+            return;
           }
         }
       }
 
-      // --- STEP 2: AGAR URL MEIN KUCH NAHI, TOH STORAGE CHECK KARO ---
+      // --- STEP 2: STORAGE CHECK ---
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        console.log("💾 Session Found in Storage:", session.user.email);
         setUser(session.user);
-      } else {
-        console.log("❌ No Active Session");
       }
       
       setAuthLoading(false);
@@ -58,7 +53,7 @@ export default function Home() {
 
     handleAuth();
 
-    // --- STEP 3: LISTENER FOR LOGOUT/LOGIN ---
+    // --- STEP 3: LISTENER ---
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
         setUser(session.user);
@@ -115,32 +110,36 @@ export default function Home() {
       <main className="max-w-6xl mx-auto p-8 mt-10">
         <div className="text-center space-y-6 mb-20">
           <h1 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-600">
-            {user ? "ACCESS" : "PROOF OF"} <br /> 
-            <span className="text-green-500">{user ? "GRANTED" : "CONTRIBUTION"}</span>
+            {(user || isConnected) ? "ACCESS" : "PROOF OF"} <br /> 
+            <span className="text-green-500">{(user || isConnected) ? "GRANTED" : "CONTRIBUTION"}</span>
           </h1>
           <p className="text-gray-400 text-xl max-w-2xl mx-auto">
             {user 
               ? `Welcome back, ${user.user_metadata.full_name}.` 
-              : "The decentralized vault for Seismic Community artifacts."}
+              : isConnected 
+                ? "Wallet Connected. You may verify with Discord for full access."
+                : "The decentralized vault for Seismic Community artifacts."}
           </p>
         </div>
 
         {/* CARDS GRID */}
         <div className="grid md:grid-cols-2 gap-8">
           
-          {/* LOGIC CARD (Left Side) */}
+          {/* LOGIC CARD (Left Side - Discord) */}
           {authLoading ? (
              <div className="border border-green-500/30 bg-green-900/10 p-10 rounded-2xl flex flex-col items-center justify-center h-full min-h-[300px] animate-pulse">
                 <Loader2 className="animate-spin text-green-400 w-16 h-16 mb-6" />
                 <h3 className="text-xl font-bold text-white">Verifying Identity...</h3>
-                <p className="text-green-400/70 text-sm mt-2">Processing Token...</p>
+                <p className="text-green-400/70 text-sm mt-2">Processing...</p>
              </div>
           ) : !user ? (
-            <div onClick={handleDiscordLogin} className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-indigo-500/50 transition-all cursor-pointer relative overflow-hidden h-full">
-              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><Disc size={100} /></div>
-              <div className="bg-indigo-500/10 w-fit p-3 rounded-xl mb-6"><Ghost className="text-indigo-400 w-8 h-8" /></div>
-              <h3 className="text-2xl font-bold mb-2 group-hover:text-indigo-400 transition-colors">Sync Discord</h3>
-              <p className="text-gray-400 mb-6">Link your Discord identity.</p>
+            <div onClick={handleDiscordLogin} className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-indigo-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
+              <div>
+                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><Disc size={100} /></div>
+                  <div className="bg-indigo-500/10 w-fit p-3 rounded-xl mb-6"><Ghost className="text-indigo-400 w-8 h-8" /></div>
+                  <h3 className="text-2xl font-bold mb-2 group-hover:text-indigo-400 transition-colors">Sync Discord</h3>
+                  <p className="text-gray-400 mb-6">Link your Discord identity for full verification.</p>
+              </div>
               <span className="text-indigo-400 text-sm font-bold flex items-center gap-2 animate-pulse">CONNECT NOW &rarr;</span>
             </div>
           ) : (
@@ -170,16 +169,15 @@ export default function Home() {
                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><UploadCloud size={100} /></div>
                 <div className="bg-green-500/10 w-fit p-3 rounded-xl mb-6"><UploadCloud className="text-green-400 w-8 h-8" /></div>
                 <h3 className="text-2xl font-bold mb-2 group-hover:text-green-400 transition-colors">Manual Upload</h3>
-                <p className="text-gray-400 mb-6">Upload your best work.</p>
+                <p className="text-gray-400 mb-6">Upload your best work via Wallet or Discord.</p>
               </div>
               <span className="text-green-400 text-sm font-bold flex items-center gap-2">START UPLOAD &rarr;</span>
             </div>
           </Link>
 
-          {/* --- NEW SECTION: VIEW PROFILE LINK --- */}
-          {/* Ye sirf tab dikhega jab user login hoga */}
-          {user && (
-            <Link href={`/u/${user.id}`} className="md:col-span-2 text-center mt-4">
+          {/* --- VIEW PROFILE LINK (Smart: Discord OR Wallet) --- */}
+          {(user || isConnected) && (
+            <Link href={`/u/${user ? user.id : address}`} className="md:col-span-2 text-center mt-4">
                 <div className="inline-flex items-center gap-2 text-gray-400 hover:text-green-500 transition border-b border-transparent hover:border-green-500 pb-1">
                 View My Public Portfolio &rarr;
                 </div>

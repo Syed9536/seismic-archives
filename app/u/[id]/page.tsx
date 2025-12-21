@@ -15,10 +15,23 @@ export default function UserProfile() {
 
   useEffect(() => {
     const fetchArtifacts = async () => {
-      const { data } = await supabase.from("archives").select("*").eq("user_id", params.id).order("created_at", { ascending: false });
+      const id = params.id as string;
+      let query = supabase.from("archives").select("*").order("created_at", { ascending: false });
+
+      // SMART QUERY LOGIC 🧠
+      if (id.startsWith("0x")) {
+        // Agar ID "0x" se shuru hoti hai toh Wallet Address match karo
+        query = query.eq("wallet_address", id);
+      } else {
+        // Warna User ID (UUID) match karo
+        query = query.eq("user_id", id);
+      }
+
+      const { data } = await query;
       if (data) setArtifacts(data);
       setLoading(false);
     };
+    
     if (params.id) fetchArtifacts();
   }, [params.id]);
 
@@ -28,9 +41,7 @@ export default function UserProfile() {
     setTimeout(() => setCopySuccess(false), 2000);
   };
 
-  const filteredArtifacts = activeTab === "all" 
-    ? artifacts 
-    : artifacts.filter(item => item.content_type === activeTab);
+  const filteredArtifacts = activeTab === "all" ? artifacts : artifacts.filter(item => item.content_type === activeTab);
 
   return (
     <div className="min-h-screen bg-black text-white font-mono">
@@ -45,11 +56,9 @@ export default function UserProfile() {
       </nav>
       
       <main className="max-w-6xl mx-auto p-8 mt-4">
-        
-        {/* HEADER */}
         <div className="mb-8 text-center md:text-left">
             <h1 className="text-4xl font-bold mb-2 text-white">Proof of Contribution</h1>
-            <p className="text-gray-400">Vault ID: <span className="text-green-500 font-mono">{params.id}</span></p>
+            <p className="text-gray-400">Identity: <span className="text-green-500 font-mono">{params.id}</span></p>
         </div>
 
         {/* TABS */}
@@ -68,26 +77,16 @@ export default function UserProfile() {
                         <div className="relative">
                             <img src={item.image_url} className="w-full h-auto object-cover" />
                             <div className="absolute top-2 right-2 flex gap-1">
-                                {item.content_type === 'chat' && <span className="bg-green-600 text-black text-xs font-bold px-2 py-1 rounded shadow">CHAT</span>}
-                                {item.content_type === 'art' && <span className="bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded shadow">ART</span>}
-                                {item.content_type === 'meme' && <span className="bg-yellow-500 text-black text-xs font-bold px-2 py-1 rounded shadow">MEME</span>}
+                                <span className="bg-black/50 backdrop-blur text-white text-[10px] font-bold px-2 py-1 rounded border border-white/20 uppercase">{item.content_type}</span>
                             </div>
                         </div>
                         <div className="p-4">
                             <p className="text-gray-300 text-sm mb-4">{item.description}</p>
-                            
-                            {/* --- VERIFY BUTTON --- */}
                             {item.message_link && (
-                                <a 
-                                    href={item.message_link} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className="block w-full text-center bg-gray-800 hover:bg-gray-700 border border-gray-700 text-green-400 text-xs font-bold py-2 rounded-lg transition flex items-center justify-center gap-2"
-                                >
+                                <a href={item.message_link} target="_blank" rel="noopener noreferrer" className="block w-full text-center bg-gray-800 hover:bg-gray-700 border border-gray-700 text-green-400 text-xs font-bold py-2 rounded-lg transition flex items-center justify-center gap-2">
                                     <ExternalLink size={12} /> VERIFY ON DISCORD
                                 </a>
                             )}
-                            
                             <div className="mt-4 pt-4 border-t border-gray-800 flex justify-between text-xs text-gray-500">
                                 <span>{new Date(item.created_at).toLocaleDateString()}</span>
                             </div>

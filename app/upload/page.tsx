@@ -3,16 +3,19 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
-import { UploadCloud, Loader2, ArrowLeft, MessageSquare, Palette, Smile, Link as LinkIcon } from "lucide-react";
+import { UploadCloud, Loader2, ArrowLeft, MessageSquare, Palette, Smile, Link as LinkIcon, Wallet } from "lucide-react";
 import Link from "next/link";
+import { useAccount } from 'wagmi'; // <--- Wallet Check ke liye
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 export default function UploadPage() {
   const router = useRouter();
+  const { address, isConnected } = useAccount(); // Wallet Status
   const [user, setUser] = useState<any>(null);
   
   const [file, setFile] = useState<File | null>(null);
   const [desc, setDesc] = useState("");
-  const [msgLink, setMsgLink] = useState(""); // <--- NAYA FIELD
+  const [msgLink, setMsgLink] = useState("");
   const [type, setType] = useState("chat");
   const [loading, setLoading] = useState(false);
 
@@ -20,13 +23,19 @@ export default function UploadPage() {
     const getUser = async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) setUser(user);
-        else router.push("/"); 
+        // HATA DIYA: else router.push("/");  <--- Ab hum kick out nahi karenge
     };
     getUser();
-  }, [router]);
+  }, []);
 
   const handleUpload = async () => {
-    if (!file || !user) {
+    // Check: Na Discord hai, Na Wallet hai?
+    if (!user && !isConnected) {
+      alert("Please Connect Discord OR Wallet to upload!");
+      return;
+    }
+
+    if (!file) {
       alert("Please select a file!");
       return;
     }
@@ -44,22 +53,27 @@ export default function UploadPage() {
         .from("uploads")
         .getPublicUrl(fileName);
 
-      const { error: dbError } = await supabase
-        .from("archives")
-        .insert([{
-            user_id: user.id,
-            discord_id: user.user_metadata.provider_id,
-            wallet_address: "Discord-User",
+      // DATA PREPARATION
+      // Agar Discord user hai toh uska ID, agar Wallet hai toh Address
+      const payload = {
+            user_id: user ? user.id : null, // Discord User UUID (Optional now)
+            discord_id: user ? user.user_metadata.provider_id : null,
+            wallet_address: address || "Discord-User", // Wallet Address Priority
             content_type: type,
             description: desc,
             image_url: publicUrl,
-            message_link: msgLink || null, // <--- Link Save kar rahe hain
-        }]);
+            message_link: msgLink || null,
+      };
+
+      const { error: dbError } = await supabase.from("archives").insert([payload]);
 
       if (dbError) throw dbError;
 
-      alert("Saved Successfully! 🔒");
-      router.push(`/u/${user.id}`);
+      alert("Uploaded via " + (user ? "Discord" : "Wallet") + " Identity! 🔒");
+      
+      // Redirect Logic: Agar Wallet hai toh address wala link, nahi toh UUID
+      const redirectId = user ? user.id : address;
+      router.push(`/u/${redirectId}`);
 
     } catch (error: any) {
       console.error(error);
@@ -75,6 +89,16 @@ export default function UploadPage() {
         <Link href="/" className="flex items-center gap-2 text-gray-500 hover:text-white mb-6 transition"><ArrowLeft size={16} /> Back to Vault</Link>
         <h1 className="text-3xl font-bold mb-8">Archive Contribution 📂</h1>
         
+        {/* --- AUTH WARNING --- */}
+        {!user && !isConnected && (
+            <div className="bg-red-500/10 border border-red-900 p-4 rounded-xl mb-6 text-center">
+                <p className="text-red-400 text-sm mb-3">Authentication Required</p>
+                <div className="flex justify-center">
+                    <ConnectButton />
+                </div>
+            </div>
+        )}
+
         <div className="space-y-6">
             {/* FILE */}
             <div>
@@ -101,22 +125,15 @@ export default function UploadPage() {
             {/* DESCRIPTION */}
             <textarea rows={2} placeholder="Description..." value={desc} onChange={(e) => setDesc(e.target.value)} className="w-full bg-black border border-gray-700 rounded p-3 focus:border-green-500 outline-none" />
 
-            {/* PROOF LINK (NAYA FEATURE) */}
+            {/* PROOF LINK */}
             <div>
                 <label className="block text-gray-400 mb-2 text-sm flex items-center gap-2">
                     <LinkIcon size={14} /> Discord Message Link (Optional)
                 </label>
-                <input 
-                    type="text" 
-                    placeholder="https://discord.com/channels/..." 
-                    value={msgLink} 
-                    onChange={(e) => setMsgLink(e.target.value)} 
-                    className="w-full bg-black border border-gray-700 rounded p-3 focus:border-green-500 outline-none text-sm text-green-400" 
-                />
-                <p className="text-xs text-gray-600 mt-2">Right-click on your message in Discord {'>'} Copy Message Link</p>
+                <input type="text" placeholder="https://discord.com/channels/..." value={msgLink} onChange={(e) => setMsgLink(e.target.value)} className="w-full bg-black border border-gray-700 rounded p-3 focus:border-green-500 outline-none text-sm text-green-400" />
             </div>
             
-            <button onClick={handleUpload} disabled={loading} className="w-full bg-green-600 hover:bg-green-500 text-black font-bold py-4 rounded-xl flex justify-center items-center gap-2 transition disabled:opacity-50">
+            <button onClick={handleUpload} disabled={loading || (!user && !isConnected)} className="w-full bg-green-600 hover:bg-green-500 text-black font-bold py-4 rounded-xl flex justify-center items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed">
               {loading ? <Loader2 className="animate-spin" /> : <UploadCloud />} {loading ? "UPLOADING..." : "SAVE TO VAULT"}
             </button>
           </div>
