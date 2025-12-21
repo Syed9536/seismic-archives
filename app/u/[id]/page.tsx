@@ -3,21 +3,14 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabase/client";
 import { useAccount } from 'wagmi'; 
-import { Share2, ShieldCheck, MessageSquare, Palette, Smile, Grid, ExternalLink, Lock, Eye, EyeOff, ShieldAlert } from "lucide-react";
+import { checkIsAdmin } from "@/utils/admins"; // IMP: Admin check utility
+import { Share2, ShieldCheck, MessageSquare, Palette, Smile, Grid, ExternalLink, Lock, Eye, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-// --- 🔐 ACCESS CONTROL CONFIGURATION ---
-// Yahan Seismic Team ke Wallet Addresses aayenge (Lowercase mein)
-const SEISMIC_ADMINS = [
-    "0x6FE125B9c4617dcceeFeB841cE8761b79FAC8280", // <--- Apna Address daal test karne ke liye
-    "0x1234567890abcdef1234567890abcdef12345678", // Admin 1
-    "0xabcdef1234567890abcdef1234567890abcdef12", // Admin 2
-].map(addr => addr.toLowerCase());
-
 export default function UserProfile() {
   const params = useParams();
-  const { address } = useAccount(); // Viewer ka Wallet
+  const { address } = useAccount(); 
   const [currentUser, setCurrentUser] = useState<any>(null);
   
   const [artifacts, setArtifacts] = useState<any[]>([]);
@@ -56,17 +49,21 @@ export default function UserProfile() {
     setTimeout(() => setCopySuccess(false), 2000);
   };
 
-  // --- 🧠 CORE PERMISSION LOGIC ---
+  // --- 🔐 THE FINAL SECURITY LOGIC ---
   
-  // 1. Check if Viewer is Owner
+  // 1. Is the Viewer the Owner?
   const isOwner = (address && address.toLowerCase() === (params.id as string).toLowerCase()) || 
                   (currentUser && currentUser.id === params.id);
 
-  // 2. Check if Viewer is Admin (Seismic Team)
-  const isAdmin = address && SEISMIC_ADMINS.includes(address.toLowerCase());
+  // 2. Is the Viewer a Whitelisted Admin? (Checks both Wallet & Discord)
+  const isAdmin = checkIsAdmin(address, currentUser?.user_metadata?.provider_id);
 
-  // 3. Final Access Decision
+  // 3. ACCESS GRANTED?
   const hasAccess = isOwner || isAdmin;
+
+  // 4. ARE WE LOGGED IN AT ALL? (For the empty state check)
+  const isLoggedIn = address || currentUser;
+
 
   const filteredArtifacts = activeTab === "all" ? artifacts : artifacts.filter(item => item.content_type === activeTab);
 
@@ -78,12 +75,21 @@ export default function UserProfile() {
           <ShieldCheck className="text-green-500 w-8 h-8" />
           <span className="text-2xl font-bold tracking-tighter">SEISMIC <span className="text-green-500">ARCHIVES</span></span>
         </Link>
-        <button onClick={copyLink} className="bg-green-900/20 text-green-400 border border-green-900 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-900/40 transition text-sm font-bold">
-          {copySuccess ? "COPIED! ✅" : <><Share2 size={16} /> SHARE IDENTITY</>}
-        </button>
+        <div className="flex gap-4">
+             {isAdmin && (
+                <Link href="/admin" className="hidden md:flex items-center gap-2 text-xs font-bold bg-red-900/20 text-red-500 border border-red-900 px-3 py-2 rounded hover:bg-red-900/40">
+                    <ShieldAlert size={14} /> ADMIN CONSOLE
+                </Link>
+             )}
+            <button onClick={copyLink} className="bg-green-900/20 text-green-400 border border-green-900 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-900/40 transition text-sm font-bold">
+            {copySuccess ? "COPIED! ✅" : <><Share2 size={16} /> SHARE IDENTITY</>}
+            </button>
+        </div>
       </nav>
       
       <main className="max-w-6xl mx-auto p-8 mt-4">
+        
+        {/* --- HEADER --- */}
         <div className="mb-8 text-center md:text-left">
             <h1 className="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-500">
               SEISMIC LEDGER
@@ -92,29 +98,27 @@ export default function UserProfile() {
               <span className="text-green-500 animate-pulse">●</span> Node ID: <span className="font-mono text-gray-500">{params.id}</span>
             </p>
             
-            {/* ACCESS STATUS BADGES */}
-            <div className="mt-4 flex gap-2 justify-center md:justify-start">
+            {/* DEBUG BADGES (Who is viewing?) */}
+            <div className="mt-4 flex flex-col md:flex-row gap-2 justify-center md:justify-start">
+                {!isLoggedIn && (
+                    <span className="text-xs font-bold text-gray-500 bg-gray-900 px-3 py-1 rounded flex items-center gap-1 border border-gray-800">
+                        <Lock size={12} /> ANONYMOUS VIEWER (ENCRYPTED VIEW)
+                    </span>
+                )}
                 {isOwner && (
                     <span className="text-xs font-bold text-black bg-green-500 px-3 py-1 rounded flex items-center gap-1">
                         <Eye size={12} /> OWNER ACCESS
                     </span>
                 )}
                 {isAdmin && !isOwner && (
-                    <span className="text-xs font-bold text-white bg-indigo-600 px-3 py-1 rounded flex items-center gap-1 shadow-[0_0_15px_rgba(79,70,229,0.5)]">
-                        <ShieldAlert size={12} /> SEISMIC AUDITOR VIEW
+                    <span className="text-xs font-bold text-white bg-red-600 px-3 py-1 rounded flex items-center gap-1 shadow-[0_0_15px_rgba(220,38,38,0.5)]">
+                        <ShieldAlert size={12} /> SEISMIC ADMIN OVERRIDE
                     </span>
                 )}
             </div>
         </div>
 
-        {/* TABS */}
-        <div className="flex flex-wrap gap-4 mb-10 border-b border-gray-800 pb-4">
-            <button onClick={() => setActiveTab("all")} className={`flex items-center gap-2 px-4 py-2 rounded-none border-b-2 text-sm font-bold transition ${activeTab === "all" ? "border-green-500 text-green-500" : "border-transparent text-gray-600 hover:text-gray-400"}`}><Grid size={16} /> ALL_BLOCKS</button>
-            <button onClick={() => setActiveTab("chat")} className={`flex items-center gap-2 px-4 py-2 rounded-none border-b-2 text-sm font-bold transition ${activeTab === "chat" ? "border-green-500 text-green-500" : "border-transparent text-gray-600 hover:text-gray-400"}`}><MessageSquare size={16} /> LOGS</button>
-            <button onClick={() => setActiveTab("art")} className={`flex items-center gap-2 px-4 py-2 rounded-none border-b-2 text-sm font-bold transition ${activeTab === "art" ? "border-green-500 text-green-500" : "border-transparent text-gray-600 hover:text-gray-400"}`}><Palette size={16} /> VISUALS</button>
-        </div>
-
-        {/* GRID */}
+        {/* --- CONTENT GRID --- */}
         {loading ? (
             <div className="flex flex-col items-center justify-center mt-20 space-y-4">
                 <div className="w-16 h-16 border-4 border-green-900 border-t-green-500 rounded-full animate-spin"></div>
@@ -130,12 +134,11 @@ export default function UserProfile() {
                     
                     // --- ACCESS LOGIC: Show Content IF (Not Encrypted) OR (User Has Access) ---
                     (!item.is_encrypted || hasAccess) ? (
-                        // 🔓 UNLOCKED CARD (Visible to Public OR Admin/Owner)
+                        
+                        // 🔓 UNLOCKED CARD
                         <div key={item.id} className={`break-inside-avoid bg-black border overflow-hidden transition-all duration-300 ${item.is_encrypted ? "border-indigo-500/50 shadow-[0_0_20px_rgba(79,70,229,0.1)]" : "border-green-900/30 hover:border-green-500"}`}>
                              <div className="relative">
                                 <img src={item.image_url} className="w-full h-auto object-cover" />
-                                
-                                {/* Badge for Encrypted Items visible to Admin/Owner */}
                                 {item.is_encrypted && (
                                     <div className="absolute top-2 right-2 bg-indigo-600 text-white text-[10px] px-2 py-1 flex items-center gap-1 font-bold shadow-lg">
                                         <Eye size={10} /> DECRYPTED
@@ -155,20 +158,22 @@ export default function UserProfile() {
                                 </div>
                              </div>
                         </div>
+
                     ) : (
-                        // 🔒 LOCKED CARD (Visible ONLY to Public when Encrypted)
+                        
+                        // 🔒 LOCKED CARD (For Random Users or Non-WL Team)
                         <div key={item.id} className="break-inside-avoid bg-black border border-gray-800 p-6 flex flex-col items-center justify-center min-h-[250px] relative overflow-hidden group">
-                            {/* Matrix Effect Background */}
                             <div className="absolute inset-0 bg-[url('https://media.giphy.com/media/U3qYN8S0j3bpK/giphy.gif')] opacity-5 grayscale bg-cover"></div>
                             
-                            <Lock size={40} className="text-gray-600 mb-4 group-hover:text-green-500 transition-colors" />
-                            <h3 className="text-gray-500 font-bold font-mono tracking-widest group-hover:text-green-500 transition-colors">ENCRYPTED BLOCK</h3>
-                            <p className="text-xs text-gray-700 mt-2 text-center">Content visible to Owner & Auditors only.</p>
+                            <Lock size={40} className="text-gray-600 mb-4" />
+                            <h3 className="text-gray-500 font-bold font-mono tracking-widest">ENCRYPTED BLOCK</h3>
+                            <p className="text-xs text-gray-700 mt-2 text-center max-w-[200px]">
+                                Content hidden. Connect a Whitelisted Wallet/Discord to decrypt.
+                            </p>
                             
                             <div className="mt-6 w-full border-t border-gray-800 pt-4">
                                 <p className="text-[10px] text-gray-600 font-mono mb-1">PROOF HASH:</p>
                                 <p className="text-[10px] text-green-900 break-all font-mono bg-black p-2 border border-gray-900 rounded">{item.id}</p>
-                                <p className="text-[10px] text-gray-600 mt-2 text-right">{new Date(item.created_at).toLocaleDateString()}</p>
                             </div>
                         </div>
                     )
