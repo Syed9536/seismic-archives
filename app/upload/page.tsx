@@ -17,7 +17,12 @@ export default function UploadPage() {
   const [desc, setDesc] = useState("");
   const [msgLink, setMsgLink] = useState("");
   const [type, setType] = useState("chat");
-  const [loading, setLoading] = useState(true);
+  
+  // Isko TRUE rakhna hai (Default Private karne ke liye)
+  const [isEncrypted, setIsEncrypted] = useState(true); 
+
+  // Isko FALSE rakhna zaroori hai (Warna button atka rahega)
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const getUser = async () => {
