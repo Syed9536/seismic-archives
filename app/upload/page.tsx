@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
-import { UploadCloud, Loader2, ArrowLeft, MessageSquare, Palette, Smile } from "lucide-react";
+import { UploadCloud, Loader2, ArrowLeft, MessageSquare, Palette, Smile, Link as LinkIcon } from "lucide-react";
 import Link from "next/link";
 
 export default function UploadPage() {
@@ -12,7 +12,8 @@ export default function UploadPage() {
   
   const [file, setFile] = useState<File | null>(null);
   const [desc, setDesc] = useState("");
-  const [type, setType] = useState("chat"); // Default 'chat' rakha hai
+  const [msgLink, setMsgLink] = useState(""); // <--- NAYA FIELD
+  const [type, setType] = useState("chat");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -49,14 +50,15 @@ export default function UploadPage() {
             user_id: user.id,
             discord_id: user.user_metadata.provider_id,
             wallet_address: "Discord-User",
-            content_type: type, // <--- Category Save ho rahi hai
+            content_type: type,
             description: desc,
             image_url: publicUrl,
+            message_link: msgLink || null, // <--- Link Save kar rahe hain
         }]);
 
       if (dbError) throw dbError;
 
-      alert("Uploaded Successfully!");
+      alert("Evidence Archived Successfully! 🔒");
       router.push(`/u/${user.id}`);
 
     } catch (error: any) {
@@ -71,16 +73,16 @@ export default function UploadPage() {
     <div className="min-h-screen bg-black text-white font-mono p-8 flex justify-center items-center">
       <div className="max-w-xl w-full bg-gray-900/50 border border-gray-800 p-8 rounded-2xl">
         <Link href="/" className="flex items-center gap-2 text-gray-500 hover:text-white mb-6 transition"><ArrowLeft size={16} /> Back to Vault</Link>
-        <h1 className="text-3xl font-bold mb-8">Add to Archives 📂</h1>
+        <h1 className="text-3xl font-bold mb-8">Archive Contribution 📂</h1>
         
         <div className="space-y-6">
-            {/* FILE INPUT */}
+            {/* FILE */}
             <div>
-                <label className="block text-gray-400 mb-2 text-sm">Upload Screenshot/Image</label>
+                <label className="block text-gray-400 mb-2 text-sm">Upload Screenshot/Art</label>
                 <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:bg-green-900/20 file:text-green-500 border border-gray-700 rounded-lg p-2" />
             </div>
 
-            {/* CATEGORY SELECTOR (VISUAL CARDS) */}
+            {/* CATEGORY */}
             <div>
                 <label className="block text-gray-400 mb-3 text-sm">Category</label>
                 <div className="grid grid-cols-3 gap-4">
@@ -97,7 +99,22 @@ export default function UploadPage() {
             </div>
 
             {/* DESCRIPTION */}
-            <textarea rows={3} placeholder="Context / Description..." value={desc} onChange={(e) => setDesc(e.target.value)} className="w-full bg-black border border-gray-700 rounded p-3 focus:border-green-500 outline-none" />
+            <textarea rows={2} placeholder="Description..." value={desc} onChange={(e) => setDesc(e.target.value)} className="w-full bg-black border border-gray-700 rounded p-3 focus:border-green-500 outline-none" />
+
+            {/* PROOF LINK (NAYA FEATURE) */}
+            <div>
+                <label className="block text-gray-400 mb-2 text-sm flex items-center gap-2">
+                    <LinkIcon size={14} /> Discord Message Link (Optional)
+                </label>
+                <input 
+                    type="text" 
+                    placeholder="https://discord.com/channels/..." 
+                    value={msgLink} 
+                    onChange={(e) => setMsgLink(e.target.value)} 
+                    className="w-full bg-black border border-gray-700 rounded p-3 focus:border-green-500 outline-none text-sm text-green-400" 
+                />
+                <p className="text-xs text-gray-600 mt-2">Right-click on your message in Discord {'>'} Copy Message Link</p>
+            </div>
             
             <button onClick={handleUpload} disabled={loading} className="w-full bg-green-600 hover:bg-green-500 text-black font-bold py-4 rounded-xl flex justify-center items-center gap-2 transition disabled:opacity-50">
               {loading ? <Loader2 className="animate-spin" /> : <UploadCloud />} {loading ? "UPLOADING..." : "SAVE TO VAULT"}
