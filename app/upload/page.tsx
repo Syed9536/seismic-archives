@@ -58,7 +58,7 @@ export default function UploadPage() {
 
       if (dbError) throw dbError;
 
-      alert("Evidence Archived Successfully! 🔒");
+      alert("Archived Successfully! 🔒");
       router.push(`/u/${user.id}`);
 
     } catch (error: any) {
