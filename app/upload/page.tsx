@@ -85,7 +85,7 @@ export default function UploadPage() {
 
       if (dbError) throw dbError;
 
-      alert(isEncrypted ? "Artifact Encrypted & Stored! 🔒" : "Artifact Published! 🌍");
+      alert(isEncrypted ? "Contribution Encrypted & Stored! 🔒" : "Contribution Published! 🌍");
       const redirectId = user ? user.id : address;
       router.push(`/u/${redirectId}`);
 
