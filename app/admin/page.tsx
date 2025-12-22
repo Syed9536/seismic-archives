@@ -34,26 +34,28 @@ export default function AdminDashboard() {
     init();
   }, [address]);
 
-  // 2. Fetch All Contributors
+  // 2. Fetch All Contributors (UPDATED LOGIC)
   const fetchGlobalData = async () => {
     const { data } = await supabase.from("archives").select("*").order("created_at", { ascending: false });
     
     if (data) {
-        // Stats Calculation
         setStats({ totalUploads: data.length, totalUsers: new Set(data.map(i => i.wallet_address || i.user_id)).size });
 
-        // Unique Users Grouping
         const userMap = new Map();
         
         data.forEach(item => {
-            // Identifier: Wallet Address or User ID
+            // Identifier: User ID or Wallet
             const id = item.wallet_address !== "Discord-User" ? item.wallet_address : item.user_id;
-            const displayName = item.wallet_address !== "Discord-User" ? item.wallet_address : (item.discord_id || "Discord User");
             
+            // 🔥 NAME LOGIC: Database wala Name > Wallet Address
+            const displayName = item.discord_username || item.wallet_address || "Unknown Node";
+            const avatar = item.avatar_url; // Database wala Avatar
+
             if (!userMap.has(id)) {
                 userMap.set(id, {
                     id: id,
-                    displayName: displayName,
+                    displayName: displayName, // Ab ye Name dikhayega
+                    avatar: avatar,           // Ab ye Photo dikhayega
                     type: item.wallet_address !== "Discord-User" ? "Wallet" : "Discord",
                     lastActive: item.created_at,
                     uploadCount: 1,
@@ -62,6 +64,11 @@ export default function AdminDashboard() {
             } else {
                 const existing = userMap.get(id);
                 existing.uploadCount += 1;
+                // Update name/avatar if missing in previous entry
+                if (!existing.displayName.includes("#") && displayName.includes("#")) {
+                     existing.displayName = displayName;
+                     existing.avatar = avatar;
+                }
                 userMap.set(id, existing);
             }
         });
@@ -159,14 +166,30 @@ export default function AdminDashboard() {
                         <tbody className="divide-y divide-gray-800">
                             {allUsers.map((contributor) => (
                                 <tr key={contributor.id} className="hover:bg-gray-900/30 transition group">
+                                    
+                                    {/* --- 🔥 NEW IDENTITY COLUMN UI --- */}
                                     <td className="p-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded bg-gray-800 flex items-center justify-center text-gray-500 overflow-hidden">
-                                                {contributor.latestUpload ? <img src={contributor.latestUpload} className="w-full h-full object-cover opacity-50" /> : <User size={16} />}
+                                            {/* AVATAR LOGIC */}
+                                            <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-500 overflow-hidden border border-gray-700">
+                                                {contributor.avatar ? (
+                                                    <img src={contributor.avatar} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <User size={16} /> // Default Icon
+                                                )}
                                             </div>
-                                            <span className="font-mono text-sm text-green-400 truncate max-w-[200px]">{contributor.displayName}</span>
+                                            
+                                            {/* NAME LOGIC */}
+                                            <div>
+                                                <p className="font-mono text-sm text-white font-bold">{contributor.displayName}</p>
+                                                {/* Agar Name dikha raha hai, toh neeche chhota wallet dikha do */}
+                                                {contributor.displayName !== contributor.id && (
+                                                    <p className="text-[10px] text-gray-600 font-mono truncate w-24">{contributor.id}</p>
+                                                )}
+                                            </div>
                                         </div>
                                     </td>
+
                                     <td className="p-4 text-xs font-bold text-gray-500">{contributor.type.toUpperCase()}</td>
                                     <td className="p-4 font-bold text-white">{contributor.uploadCount}</td>
                                     <td className="p-4 text-xs text-gray-500 font-mono">{new Date(contributor.lastActive).toLocaleDateString()}</td>
