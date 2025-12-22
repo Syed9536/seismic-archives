@@ -124,7 +124,7 @@ export default function UploadPage() {
                     {/* Naam ka Input (Discord walo ke liye disabled, Wallet walo ke liye open) */}
                     <input 
                         type="text" 
-                        placeholder="Discord Username (e.g. Syed#1234)" 
+                        placeholder="Discord Username (e.g. 0xSyeds)" 
                         value={discordName} 
                         onChange={(e) => setDiscordName(e.target.value)}
                         disabled={!!user} // Disable if logged in via Discord (Auto-filled)
