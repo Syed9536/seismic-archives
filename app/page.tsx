@@ -12,73 +12,69 @@ export default function Home() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  // --- 1. AUTH HANDLING ---
   useEffect(() => {
     const handleAuth = async () => {
       setAuthLoading(true);
 
-      // --- 👇 STEP 1: CHECK URL FOR TOKEN (AND RETURN TICKET) 👇 ---
+      // Manual Token Parsing (For speed)
       const hash = window.location.hash;
-
       if (hash && hash.includes("access_token")) {
-        console.log("🔓 Token Found in URL! Manually setting session...");
-        
         const params = new URLSearchParams(hash.substring(1));
         const accessToken = params.get("access_token");
         const refreshToken = params.get("refresh_token");
 
         if (accessToken) {
-          const { data, error } = await supabase.auth.setSession({
+          const { data } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken || "",
           });
-
-          if (!error && data.session) {
-            console.log("✅ Manual Login Success:", data.session.user.email);
-            setUser(data.session.user);
-            
-            // --- 🎫 RETURN TICKET LOGIC ---
-            const returnUrl = localStorage.getItem('seismic_return_url');
-            if (returnUrl) {
-                console.log("🎫 Return Ticket Found! Redirecting to:", returnUrl);
-                localStorage.removeItem('seismic_return_url'); // Clear ticket
-                window.location.href = returnUrl; // Send back to Profile
-                return; // Stop execution here
-            }
-            // -----------------------------
-
-            setAuthLoading(false);
-            window.history.replaceState(null, '', window.location.pathname);
-            return;
+          if (data.session) {
+             setUser(data.session.user);
+             // Note: Redirect logic is moved to the separate useEffect below
           }
         }
       }
 
-      // --- STEP 2: FALLBACK (NORMAL SESSION CHECK) ---
+      // Session Check
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        setUser(session.user);
-      }
+      if (session) setUser(session.user);
+      
       setAuthLoading(false);
     };
 
     handleAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        setUser(session.user);
-        setAuthLoading(false);
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setAuthLoading(false);
-      }
+      if (session) setUser(session.user);
+      if (event === 'SIGNED_OUT') setUser(null);
+      setAuthLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+
+  // --- 🔥 2. THE REDIRECT FIX (RETURN TICKET LOGIC) ---
+  // Ye useEffect tab chalega jaise hi 'user' login hoga.
+  useEffect(() => {
+    if (user) {
+        const returnUrl = localStorage.getItem('seismic_return_url');
+        if (returnUrl) {
+            console.log("✈️ Return Ticket Found! Redirecting to:", returnUrl);
+            
+            // Ticket phaad do taaki loop na bane
+            localStorage.removeItem('seismic_return_url'); 
+            
+            // Turant Wapas Bhejo
+            window.location.href = returnUrl; 
+        }
+    }
+  }, [user]); // <--- Dependency: User state change
+
+
   const handleDiscordLogin = async () => {
     setAuthLoading(true);
-    // Standard login from Home page (stays on Home)
     await supabase.auth.signInWithOAuth({
       provider: 'discord',
       options: { redirectTo: window.location.origin },
@@ -116,101 +112,105 @@ export default function Home() {
 
       {/* HERO SECTION */}
       <main className="max-w-6xl mx-auto p-8 mt-10">
-        <div className="text-center space-y-6 mb-20">
-          <h1 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-600">
-            {(user || isConnected) ? "ACCESS" : "PROOF OF"} <br /> 
-            <span className="text-green-500">{(user || isConnected) ? "GRANTED" : "CONTRIBUTION"}</span>
-          </h1>
-          <p className="text-gray-400 text-xl max-w-2xl mx-auto">
-            {user 
-              ? `Welcome back, ${user.user_metadata.full_name}.` 
-              : isConnected 
-                ? "Wallet Connected. You may verify with Discord for full access."
-                : "The decentralized vault for Seismic Community artifacts."}
-          </p>
-        </div>
-
-        {/* --- MAIN SECTION (FLEXBOX LAYOUT FOR 'OR' DIVIDER) --- */}
-        <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center">
-          
-          {/* LEFT SIDE: DISCORD / PROFILE */}
-          <div className="flex-1 w-full">
-            {authLoading ? (
-              <div className="border border-green-500/30 bg-green-900/10 p-10 rounded-2xl flex flex-col items-center justify-center h-full min-h-[300px] animate-pulse">
-                  <Loader2 className="animate-spin text-green-400 w-16 h-16 mb-6" />
-                  <h3 className="text-xl font-bold text-white">Verifying Identity...</h3>
-              </div>
-            ) : !user ? (
-              <div onClick={handleDiscordLogin} className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-indigo-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
-                <div>
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><Disc size={100} /></div>
-                    <div className="bg-indigo-500/10 w-fit p-3 rounded-xl mb-6"><Ghost className="text-indigo-400 w-8 h-8" /></div>
-                    <h3 className="text-2xl font-bold mb-2 group-hover:text-indigo-400 transition-colors">Sync Discord</h3>
-                    <p className="text-gray-400 mb-6">Link your Discord identity for full verification.</p>
+        
+        {/* AGAR REDIRECT HO RAHA HAI TO LOADING DIKHAO */}
+        {authLoading ? (
+            <div className="flex flex-col items-center justify-center min-h-[50vh]">
+                <Loader2 className="animate-spin text-green-500 w-16 h-16 mb-4" />
+                <h2 className="text-2xl font-bold animate-pulse">AUTHENTICATING...</h2>
+                <p className="text-gray-500">Verifying credentials & redirecting.</p>
+            </div>
+        ) : (
+            <>
+                <div className="text-center space-y-6 mb-20">
+                <h1 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-600">
+                    {(user || isConnected) ? "ACCESS" : "PROOF OF"} <br /> 
+                    <span className="text-green-500">{(user || isConnected) ? "GRANTED" : "CONTRIBUTION"}</span>
+                </h1>
+                <p className="text-gray-400 text-xl max-w-2xl mx-auto">
+                    {user 
+                    ? `Welcome back, ${user.user_metadata.full_name}.` 
+                    : isConnected 
+                        ? "Wallet Connected. You may verify with Discord for full access."
+                        : "The decentralized vault for Seismic Community artifacts."}
+                </p>
                 </div>
-                <span className="text-indigo-400 text-sm font-bold flex items-center gap-2 animate-pulse">CONNECT NOW &rarr;</span>
-              </div>
-            ) : (
-              <div className="border border-green-500/50 bg-green-900/10 p-10 rounded-2xl relative overflow-hidden flex flex-col justify-between h-full">
-                <div className="absolute top-0 right-0 p-4 opacity-10"><User size={100} /></div>
-                <div>
-                  <div className="flex items-center gap-4 mb-6">
-                    <img src={user.user_metadata.avatar_url} className="w-20 h-20 rounded-full border-4 border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.5)]" />
-                    <div>
-                      <h3 className="text-3xl font-bold text-white">{user.user_metadata.full_name}</h3>
-                      <p className="text-green-400 text-sm font-mono tracking-wider">VERIFIED</p>
+
+                {/* --- MAIN SECTION --- */}
+                <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center">
+                
+                {/* LEFT SIDE: DISCORD / PROFILE */}
+                <div className="flex-1 w-full">
+                    {!user ? (
+                    <div onClick={handleDiscordLogin} className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-indigo-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
+                        <div>
+                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><Disc size={100} /></div>
+                            <div className="bg-indigo-500/10 w-fit p-3 rounded-xl mb-6"><Ghost className="text-indigo-400 w-8 h-8" /></div>
+                            <h3 className="text-2xl font-bold mb-2 group-hover:text-indigo-400 transition-colors">Sync Discord</h3>
+                            <p className="text-gray-400 mb-6">Link your Discord identity for full verification.</p>
+                        </div>
+                        <span className="text-indigo-400 text-sm font-bold flex items-center gap-2 animate-pulse">CONNECT NOW &rarr;</span>
                     </div>
-                  </div>
-                  <div className="space-y-3 mb-8 bg-black/30 p-4 rounded-lg border border-green-900/30">
-                    <p className="text-gray-400 text-sm">Discord Connected ✅</p>
-                    <p className="text-gray-500 text-xs truncate">ID: {user.id}</p>
-                  </div>
+                    ) : (
+                    <div className="border border-green-500/50 bg-green-900/10 p-10 rounded-2xl relative overflow-hidden flex flex-col justify-between h-full">
+                        <div className="absolute top-0 right-0 p-4 opacity-10"><User size={100} /></div>
+                        <div>
+                        <div className="flex items-center gap-4 mb-6">
+                            <img src={user.user_metadata.avatar_url} className="w-20 h-20 rounded-full border-4 border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.5)]" />
+                            <div>
+                            <h3 className="text-3xl font-bold text-white">{user.user_metadata.full_name}</h3>
+                            <p className="text-green-400 text-sm font-mono tracking-wider">VERIFIED</p>
+                            </div>
+                        </div>
+                        <div className="space-y-3 mb-8 bg-black/30 p-4 rounded-lg border border-green-900/30">
+                            <p className="text-gray-400 text-sm">Discord Connected ✅</p>
+                            <p className="text-gray-500 text-xs truncate">ID: {user.id}</p>
+                        </div>
+                        </div>
+                        <button onClick={handleLogout} className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 px-4 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition border border-red-900/30"><LogOut size={16} /> DISCONNECT</button>
+                    </div>
+                    )}
                 </div>
-                <button onClick={handleLogout} className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 px-4 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition border border-red-900/30"><LogOut size={16} /> DISCONNECT</button>
-              </div>
-            )}
-          </div>
 
-          {/* --- MIDDLE: OR DIVIDER --- */}
-          <div className="flex items-center justify-center md:flex-col relative shrink-0">
-             {/* Line (Horizontal on Mobile, Vertical on Desktop) */}
-             <div className="absolute inset-0 flex items-center justify-center md:flex-col">
-               <div className="w-full h-px md:w-px md:h-full bg-gray-800"></div>
-             </div>
-             {/* Circle Badge */}
-             <div className="relative bg-black p-2">
-                <span className="text-gray-500 text-xs font-bold border border-gray-800 px-3 py-2 rounded-full bg-gray-900/50 shadow-xl">
-                  OR
-                </span>
-             </div>
-          </div>
-
-          {/* RIGHT SIDE: MANUAL UPLOAD */}
-          <div className="flex-1 w-full">
-            <Link href="/upload">
-              <div className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-green-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
-                <div>
-                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><UploadCloud size={100} /></div>
-                  <div className="bg-green-500/10 w-fit p-3 rounded-xl mb-6"><UploadCloud className="text-green-400 w-8 h-8" /></div>
-                  <h3 className="text-2xl font-bold mb-2 group-hover:text-green-400 transition-colors">Manual Upload</h3>
-                  <p className="text-gray-400 mb-6">Upload your contribution and save to wallet.</p>
+                {/* MIDDLE: OR DIVIDER */}
+                <div className="flex items-center justify-center md:flex-col relative shrink-0">
+                    <div className="absolute inset-0 flex items-center justify-center md:flex-col">
+                    <div className="w-full h-px md:w-px md:h-full bg-gray-800"></div>
+                    </div>
+                    <div className="relative bg-black p-2">
+                        <span className="text-gray-500 text-xs font-bold border border-gray-800 px-3 py-2 rounded-full bg-gray-900/50 shadow-xl">
+                        OR
+                        </span>
+                    </div>
                 </div>
-                <span className="text-green-400 text-sm font-bold flex items-center gap-2">START UPLOAD &rarr;</span>
-              </div>
-            </Link>
-          </div>
 
-        </div>
+                {/* RIGHT SIDE: MANUAL UPLOAD */}
+                <div className="flex-1 w-full">
+                    <Link href="/upload">
+                    <div className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-green-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
+                        <div>
+                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><UploadCloud size={100} /></div>
+                        <div className="bg-green-500/10 w-fit p-3 rounded-xl mb-6"><UploadCloud className="text-green-400 w-8 h-8" /></div>
+                        <h3 className="text-2xl font-bold mb-2 group-hover:text-green-400 transition-colors">Manual Upload</h3>
+                        <p className="text-gray-400 mb-6">Upload your contribution and save to wallet.</p>
+                        </div>
+                        <span className="text-green-400 text-sm font-bold flex items-center gap-2">START UPLOAD &rarr;</span>
+                    </div>
+                    </Link>
+                </div>
 
-        {/* --- FOOTER LINK --- */}
-        {(user || isConnected) && (
-          <div className="text-center mt-12">
-            <Link href={`/u/${user ? user.id : address}`} className="inline-flex items-center gap-2 text-gray-400 hover:text-green-500 transition border-b border-transparent hover:border-green-500 pb-1">
-              View My Public Portfolio &rarr;
-            </Link>
-          </div>
+                </div>
+
+                {/* FOOTER LINK */}
+                {(user || isConnected) && (
+                <div className="text-center mt-12">
+                    <Link href={`/u/${user ? user.id : address}`} className="inline-flex items-center gap-2 text-gray-400 hover:text-green-500 transition border-b border-transparent hover:border-green-500 pb-1">
+                    View My Public Portfolio &rarr;
+                    </Link>
+                </div>
+                )}
+            </>
         )}
-
       </main>
     </div>
   );
