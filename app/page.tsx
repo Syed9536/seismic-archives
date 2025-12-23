@@ -5,14 +5,12 @@ import { useState, useEffect } from "react";
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi'; 
 import { checkIsAdmin } from "@/utils/admins"; 
-import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2, ShieldAlert, LayoutDashboard, Lock, Trash2, CheckCircle, ExternalLink } from "lucide-react"; 
-import Link from "next/link";
+import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2, ShieldAlert, LayoutDashboard, Lock, Trash2, CheckCircle, ExternalLink, ArrowUpRight } from "lucide-react"; 
+import { useRouter } from "next/navigation"; // Router use karenge Link ki jagah
 
 // --- ADMIN HELPER FUNCTIONS ---
 const deleteArtifact = async (artifactId: string, filePath: string) => {
-  // FIX: Return object explicitly on cancel
   if(!confirm("⚠️ Delete this item permanently?")) return { success: false };
-  
   try {
     if (filePath) {
         await supabase.storage.from('artifacts').remove([filePath]);
@@ -27,8 +25,19 @@ const deleteArtifact = async (artifactId: string, filePath: string) => {
   }
 };
 
+// Safe Date Helper
+const formatDate = (dateString: string) => {
+    try {
+        if(!dateString) return "N/A";
+        return new Date(dateString).toLocaleDateString();
+    } catch (e) {
+        return "Invalid Date";
+    }
+};
+
 export default function Home() {
   const { address, isConnected } = useAccount(); 
+  const router = useRouter(); // Navigation Handler
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false); 
@@ -73,12 +82,12 @@ export default function Home() {
   // --- 2. ADMIN DATA FETCHING ---
   useEffect(() => {
     const runAdminLogic = async () => {
-        const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
-        const adminStatus = checkIsAdmin(address, discordId);
-        setIsAdmin(adminStatus || false);
+        try {
+            const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
+            const adminStatus = checkIsAdmin(address, discordId);
+            setIsAdmin(adminStatus || false);
 
-        if (adminStatus) {
-            try {
+            if (adminStatus) {
                 const { data: artifactsData, error } = await supabase.from('archives').select('*').order('created_at', { ascending: false });
                 
                 if (error) throw error;
@@ -90,6 +99,7 @@ export default function Home() {
                         const identity = curr.wallet_address || curr.user_id || 'unknown'; 
                         
                         if(!acc[identity]) {
+                            // Safe Avatar & Name Logic
                             const seed = identity === 'unknown' ? 'default' : identity;
                             const autoAvatar = `https://api.dicebear.com/9.x/identicon/svg?seed=${seed}`;
                             
@@ -118,9 +128,9 @@ export default function Home() {
                     
                     setUsers(Object.values(groupedMap));
                 }
-            } catch (err) {
-                console.error("Fetch Error:", err);
             }
+        } catch (err) {
+            console.error("Fetch Error:", err);
         }
     };
     runAdminLogic();
@@ -132,14 +142,16 @@ export default function Home() {
   };
   const handleLogout = async () => { await supabase.auth.signOut(); setUser(null); };
 
+  // Helper to get name
+  const getUserName = () => {
+      return user?.user_metadata?.full_name || user?.email?.split('@')[0] || "User";
+  }
+
+  // Filtered Users
   const displayedUsers = users.filter(u => {
     if (activeTab === 'ready_for_upgrade') return u.isUpgraded === true;
     return true;
   });
-
-  const getUserName = () => {
-      return user?.user_metadata?.full_name || user?.email?.split('@')[0] || "User";
-  }
 
   return (
     <div className="min-h-screen bg-black text-white font-mono selection:bg-green-500 selection:text-black">
@@ -155,11 +167,13 @@ export default function Home() {
         
         <div className="flex gap-4 items-center">
           {isAdmin && (
-            <Link href="/admin">
-                <div className="hidden md:flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.6)] animate-pulse transition cursor-pointer">
-                    <LayoutDashboard size={14} /> ADMIN PANEL
-                </div>
-            </Link>
+            // Safe Navigation Button (No Link tag to prevent nesting errors)
+            <button 
+                onClick={() => router.push('/admin')}
+                className="hidden md:flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.6)] animate-pulse transition"
+            >
+                <LayoutDashboard size={14} /> ADMIN PANEL
+            </button>
           )}
           
           {user && (
@@ -203,8 +217,9 @@ export default function Home() {
                 </p>
                 </div>
 
-                {/* USER ACTION CARDS */}
+                {/* MAIN CARDS */}
                 <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center mb-20">
+                    {/* Discord Card */}
                     <div className="flex-1 w-full">
                         {!user ? (
                         <div onClick={handleDiscordLogin} className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-indigo-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
@@ -232,34 +247,28 @@ export default function Home() {
                         </div>
                         )}
                     </div>
+                    {/* Manual Upload Card */}
                     <div className="flex-1 w-full">
-                        {user ? (
-                            <Link href="/upload">
-                            <div className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-green-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
-                                <div>
+                        <div 
+                            onClick={() => { if(user) router.push('/upload'); }} // Safe Navigation
+                            className={`group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl transition-all relative overflow-hidden h-full flex flex-col justify-between ${user ? 'cursor-pointer hover:border-green-500/50' : 'opacity-50 cursor-not-allowed'}`}
+                        >
+                            <div>
                                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><UploadCloud size={100} /></div>
-                                <div className="bg-green-500/10 w-fit p-3 rounded-xl mb-6"><UploadCloud className="text-green-400 w-8 h-8" /></div>
-                                <h3 className="text-2xl font-bold mb-2 group-hover:text-green-400 transition-colors">Manual Upload</h3>
-                                <p className="text-gray-400 mb-6">Upload your contribution and save to vault.</p>
+                                <div className={`w-fit p-3 rounded-xl mb-6 ${user ? 'bg-green-500/10' : 'bg-gray-800/50'}`}>
+                                    {user ? <UploadCloud className="text-green-400 w-8 h-8" /> : <Lock className="text-gray-500 w-8 h-8" />}
                                 </div>
-                                <span className="text-green-400 text-sm font-bold flex items-center gap-2">START UPLOAD &rarr;</span>
+                                <h3 className={`text-2xl font-bold mb-2 ${user ? 'group-hover:text-green-400' : 'text-gray-500'}`}>Manual Upload</h3>
+                                <p className="text-gray-400 mb-6">{user ? 'Upload your contribution and save to vault.' : 'Verify your Discord identity to unlock upload access.'}</p>
                             </div>
-                            </Link>
-                        ) : (
-                            <div className="border border-gray-800 bg-black/40 p-10 rounded-2xl relative overflow-hidden h-full flex flex-col justify-between opacity-50 cursor-not-allowed">
-                                <div>
-                                    <div className="absolute top-0 right-0 p-4 opacity-5"><UploadCloud size={100} /></div>
-                                    <div className="bg-gray-800/50 w-fit p-3 rounded-xl mb-6"><Lock className="text-gray-500 w-8 h-8" /></div>
-                                    <h3 className="text-2xl font-bold mb-2 text-gray-500">Manual Upload</h3>
-                                    <p className="text-gray-600 mb-6">Verify your Discord identity to unlock upload access.</p>
-                                </div>
-                                <span className="text-gray-600 text-sm font-bold flex items-center gap-2">LOCKED 🔒</span>
-                            </div>
-                        )}
+                            <span className={`text-sm font-bold flex items-center gap-2 ${user ? 'text-green-400' : 'text-gray-600'}`}>
+                                {user ? <>START UPLOAD &rarr;</> : <>LOCKED 🔒</>}
+                            </span>
+                        </div>
                     </div>
                 </div>
 
-                {/* 🔥 ADMIN CONTROL CENTER 🔥 */}
+                {/* 🔥 ADMIN CONTROL CENTER (SAFE MODE) 🔥 */}
                 {isAdmin && (
                   <div className="border-t border-red-900/50 pt-10 mt-10">
                     <h2 className="text-2xl font-black text-red-600 mb-6 flex items-center gap-2">
@@ -284,24 +293,26 @@ export default function Home() {
                             <div className="max-h-[400px] overflow-y-auto pr-2 space-y-2">
                                 {userArtifacts.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No artifacts found.</p>}
                                 {userArtifacts.map((item) => (
-                                    <div key={item.id} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
+                                    item && ( // Safe Check
+                                    <div key={item.id || Math.random()} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className="text-white min-w-0">
                                                 <p className="font-bold truncate max-w-[150px]">
                                                     {item.filename || item.name || `Artifact ${item.id.slice(0,4)}`}
                                                 </p>
-                                                <span className={`text-[10px] px-2 py-0.5 rounded ${
-                                                    item.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
-                                                }`}>
-                                                    {item.status?.toUpperCase() || 'PENDING'}
-                                                </span>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded ${item.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                                                        {item.status?.toUpperCase() || 'PENDING'}
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-600">{formatDate(item.created_at)}</span>
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="flex gap-2 shrink-0">
                                             <button 
                                                 onClick={async () => {
                                                     const res = await deleteArtifact(item.id, item.file_path);
-                                                    if(res?.success) { // FIX: Optional chaining
+                                                    if(res?.success) {
                                                         setUserArtifacts(prev => prev.filter(a => a.id !== item.id));
                                                     }
                                                 }}
@@ -310,13 +321,15 @@ export default function Home() {
                                                 <Trash2 size={16} />
                                             </button>
 
-                                            <Link href={`/u/${item.user_id || item.wallet_address || '#'}`}>
-                                                <div className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded cursor-pointer">
-                                                    <ExternalLink size={16} />
-                                                </div>
-                                            </Link>
+                                            <button 
+                                                onClick={() => router.push(`/u/${item.user_id || item.wallet_address || '#'}`)}
+                                                className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded cursor-pointer"
+                                            >
+                                                <ArrowUpRight size={16} />
+                                            </button>
                                         </div>
                                     </div>
+                                    )
                                 ))}
                             </div>
                         </div>
@@ -329,10 +342,10 @@ export default function Home() {
                              <div className="max-h-[400px] overflow-y-auto pr-2 space-y-2">
                                 {displayedUsers.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No contributors found.</p>}
                                 {displayedUsers.map(u => (
-                                    <div key={u.id} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
+                                    u && ( // Safe Check
+                                    <div key={u.id || Math.random()} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
                                         <div className="flex items-center gap-3">
                                             <img src={u.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover bg-black" alt="avatar" />
-                                            
                                             <div>
                                                 <p className={`font-mono text-xs mb-1 ${u.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
                                                     {u.isUpgraded ? '★ UPGRADED' : u.username}
@@ -341,12 +354,14 @@ export default function Home() {
                                             </div>
                                         </div>
                                         
-                                        <Link href={`/u/${u.id}`}>
-                                            <div className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 transition cursor-pointer ${u.isUpgraded ? 'bg-yellow-500 text-black hover:bg-yellow-400' : 'bg-gray-800 text-white hover:bg-gray-700'}`}>
-                                                INSPECT 🔍
-                                            </div>
-                                        </Link>
+                                        <button 
+                                            onClick={() => router.push(`/u/${u.id}`)}
+                                            className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 transition ${u.isUpgraded ? 'bg-yellow-500 text-black hover:bg-yellow-400' : 'bg-gray-800 text-white hover:bg-gray-700'}`}
+                                        >
+                                            INSPECT 🔍
+                                        </button>
                                     </div>
+                                    )
                                 ))}
                              </div>
                         </div>
@@ -357,9 +372,12 @@ export default function Home() {
 
                 {(user || isConnected) && (
                 <div className="text-center mt-12 pb-10">
-                    <Link href={`/u/${user ? user.id : address}`} className="inline-flex items-center gap-2 text-gray-400 hover:text-green-500 transition border-b border-transparent hover:border-green-500 pb-1">
-                    View My Public Portfolio &rarr;
-                    </Link>
+                    <button 
+                        onClick={() => router.push(`/u/${user ? user.id : address}`)}
+                        className="inline-flex items-center gap-2 text-gray-400 hover:text-green-500 transition border-b border-transparent hover:border-green-500 pb-1"
+                    >
+                        View My Public Portfolio &rarr;
+                    </button>
                 </div>
                 )}
             </>
