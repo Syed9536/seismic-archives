@@ -60,9 +60,7 @@ export default function UserProfile() {
                  return;
              }
              
-             // 2. Agar khali mila, to user_id se try karo (kisi ne agar user_id me wallet daal diya ho galti se)
-             // Note: UUID column me 0x daalne se error ata hai, isliye ye risk hai, par try kar rahe hain
-             // Behtar hai hum empty return karein agar wallet match nahi hua
+             // 2. Agar khali mila, to user_id se try karo
              console.log("No data found for wallet, checking user_id fallback skipped to avoid UUID error.");
              setArtifacts([]);
              setLoading(false);
@@ -99,7 +97,7 @@ export default function UserProfile() {
 
   // --- 3. ACTIONS ---
   
-  // A. DELETE FUNCTION (RLS OFF kar diya hai to ab chalega)
+  // A. DELETE FUNCTION 
   const deleteItem = async (artifactId: string, filePath: string) => {
     if(!confirm("⚠️ DELETE PERMANENTLY?")) return;
     
@@ -123,7 +121,7 @@ export default function UserProfile() {
     }
   };
 
-  // B. UPGRADE USER FUNCTION (With Count Check)
+  // B. UPGRADE USER FUNCTION
   const verifyUserForUpgrade = async () => {
     if(!confirm("Mark this node for ROLE UPGRADE?")) return;
 
@@ -133,18 +131,16 @@ export default function UserProfile() {
 
     // TRY 1: WALLET ADDRESS UPDATE
     if (id.startsWith("0x")) {
-        // Hum select count use kar rahe hain taaki pata chale sach me update hua ya nahi
         const { error, count } = await supabase
             .from('archives')
-            .update({ status: 'verified' }, { count: 'exact' }) // Count maanga
+            .update({ status: 'verified' }, { count: 'exact' }) 
             .eq('wallet_address', id)
-            .select(); // Select zaroori hai count return karne ke liye
+            .select(); 
 
         if (error) {
             message = "Wallet Update Error: " + error.message;
         } else if (count === 0) {
-            // Agar 0 update hue, matlab wallet address match nahi hua
-            message = "⚠️ No artifacts found with this Wallet Address. Check if DB has correct 'wallet_address'.";
+            message = "⚠️ No artifacts found with this Wallet Address.";
         } else {
             success = true;
             message = `✅ SUCCESS: Updated ${count} artifacts! Node marked for Upgrade.`;

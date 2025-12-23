@@ -7,9 +7,11 @@ import { checkIsAdmin } from "@/utils/admins";
 import { ShieldAlert, User, ExternalLink, Loader2, Lock, LayoutDashboard, Search } from "lucide-react";
 import Link from "next/link";
 import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { useRouter } from "next/navigation"; // Router Import kiya
 
 export default function AdminDashboard() {
   const { address, isConnected } = useAccount();
+  const router = useRouter(); // Router initialize kiya
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [allUsers, setAllUsers] = useState<any[]>([]);
@@ -34,7 +36,7 @@ export default function AdminDashboard() {
     init();
   }, [address]);
 
-  // 2. Fetch All Contributors (UPDATED LOGIC)
+  // 2. Fetch All Contributors
   const fetchGlobalData = async () => {
     const { data } = await supabase.from("archives").select("*").order("created_at", { ascending: false });
     
@@ -44,18 +46,16 @@ export default function AdminDashboard() {
         const userMap = new Map();
         
         data.forEach(item => {
-            // Identifier: User ID or Wallet
             const id = item.wallet_address !== "Discord-User" ? item.wallet_address : item.user_id;
             
-            // 🔥 NAME LOGIC: Database wala Name > Wallet Address
             const displayName = item.discord_username || item.wallet_address || "Unknown Node";
-            const avatar = item.avatar_url; // Database wala Avatar
+            const avatar = item.avatar_url; 
 
             if (!userMap.has(id)) {
                 userMap.set(id, {
                     id: id,
-                    displayName: displayName, // Ab ye Name dikhayega
-                    avatar: avatar,           // Ab ye Photo dikhayega
+                    displayName: displayName, 
+                    avatar: avatar,           
                     type: item.wallet_address !== "Discord-User" ? "Wallet" : "Discord",
                     lastActive: item.created_at,
                     uploadCount: 1,
@@ -64,7 +64,6 @@ export default function AdminDashboard() {
             } else {
                 const existing = userMap.get(id);
                 existing.uploadCount += 1;
-                // Update name/avatar if missing in previous entry
                 if (!existing.displayName.includes("#") && displayName.includes("#")) {
                      existing.displayName = displayName;
                      existing.avatar = avatar;
@@ -139,7 +138,7 @@ export default function AdminDashboard() {
                     </div>
                 </div>
 
-                {/* SEARCH BAR (Visual only for now) */}
+                {/* SEARCH BAR */}
                 <div className="flex justify-between items-end">
                     <h3 className="text-xl font-bold text-gray-300 flex items-center gap-2">
                         Active Nodes (Contributors)
@@ -166,23 +165,17 @@ export default function AdminDashboard() {
                         <tbody className="divide-y divide-gray-800">
                             {allUsers.map((contributor) => (
                                 <tr key={contributor.id} className="hover:bg-gray-900/30 transition group">
-                                    
-                                    {/* --- 🔥 NEW IDENTITY COLUMN UI --- */}
                                     <td className="p-4">
                                         <div className="flex items-center gap-3">
-                                            {/* AVATAR LOGIC */}
                                             <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-500 overflow-hidden border border-gray-700">
                                                 {contributor.avatar ? (
                                                     <img src={contributor.avatar} className="w-full h-full object-cover" />
                                                 ) : (
-                                                    <User size={16} /> // Default Icon
+                                                    <User size={16} /> 
                                                 )}
                                             </div>
-                                            
-                                            {/* NAME LOGIC */}
                                             <div>
                                                 <p className="font-mono text-sm text-white font-bold">{contributor.displayName}</p>
-                                                {/* Agar Name dikha raha hai, toh neeche chhota wallet dikha do */}
                                                 {contributor.displayName !== contributor.id && (
                                                     <p className="text-[10px] text-gray-600 font-mono truncate w-24">{contributor.id}</p>
                                                 )}
@@ -193,12 +186,15 @@ export default function AdminDashboard() {
                                     <td className="p-4 text-xs font-bold text-gray-500">{contributor.type.toUpperCase()}</td>
                                     <td className="p-4 font-bold text-white">{contributor.uploadCount}</td>
                                     <td className="p-4 text-xs text-gray-500 font-mono">{new Date(contributor.lastActive).toLocaleDateString()}</td>
+                                    
+                                    {/* 🔥 FIXED: Button inside Router.push (Link hataya) 🔥 */}
                                     <td className="p-4 text-right">
-                                        <Link href={`/u/${contributor.id}`}>
-                                            <button className="bg-green-900/10 hover:bg-green-500 text-green-500 hover:text-black border border-green-900 hover:border-green-500 px-3 py-1 rounded text-xs font-bold transition flex items-center gap-2 ml-auto">
-                                                INSPECT VAULT <ExternalLink size={12} />
-                                            </button>
-                                        </Link>
+                                        <button 
+                                            onClick={() => router.push(`/u/${contributor.id}`)}
+                                            className="bg-green-900/10 hover:bg-green-500 text-green-500 hover:text-black border border-green-900 hover:border-green-500 px-3 py-1 rounded text-xs font-bold transition flex items-center gap-2 ml-auto"
+                                        >
+                                            INSPECT VAULT <ExternalLink size={12} />
+                                        </button>
                                     </td>
                                 </tr>
                             ))}
