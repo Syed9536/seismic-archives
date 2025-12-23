@@ -23,28 +23,18 @@ const deleteArtifact = async (artifactId: string, filePath: string) => {
   }
 };
 
-const verifyArtifact = async (artifactId: string) => {
-  const { error } = await supabase.from('archives').update({ status: 'verified' }).eq('id', artifactId);
-  return { success: !error };
-};
-
-const markUserForUpgrade = async (userId: string) => {
-   // Console log for debug (Actual logic runs in the Profile Page)
-   console.log("Marking user for upgrade:", userId);
-};
-
 export default function Home() {
   const { address, isConnected } = useAccount(); 
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false); 
 
-  // --- ADMIN DASHBOARD STATE ---
+  // --- DASHBOARD DATA ---
   const [userArtifacts, setUserArtifacts] = useState<any[]>([]); 
   const [users, setUsers] = useState<any[]>([]); 
   const [activeTab, setActiveTab] = useState('all'); 
 
-  // --- 1. AUTH HANDLING ---
+  // --- 1. AUTH ---
   useEffect(() => {
     const handleAuth = async () => {
       setAuthLoading(true);
@@ -74,7 +64,7 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- 2. ADMIN DATA FETCHING ---
+  // --- 2. DATA FETCHING & SMART DISPLAY LOGIC ---
   useEffect(() => {
     const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
     const adminStatus = checkIsAdmin(address, discordId);
@@ -87,25 +77,33 @@ export default function Home() {
             if (artifactsData) {
                 setUserArtifacts(artifactsData);
 
-                // --- SMART GROUPING LOGIC (Fixes Unknown User/PFP) ---
+                // --- SMART GROUPING & AVATAR GENERATION ---
                 const groupedMap = artifactsData.reduce((acc: any, curr: any) => {
-                    // Identity Priority: Wallet -> UserID -> Random
                     const identity = curr.wallet_address || curr.user_id || 'unknown'; 
                     
                     if(!acc[identity]) {
+                        // Agar DB me username/avatar nahi hai to hum GENERATE karenge
+                        // 1. Avatar: DiceBear API se Unique ID ke basis par
+                        const autoAvatar = `https://api.dicebear.com/9.x/identicon/svg?seed=${identity}`;
+                        
+                        // 2. Name: Agar wallet hai to short address, nahi to Short ID
+                        let displayName = "Contributor";
+                        if(curr.username) displayName = curr.username;
+                        else if(identity.startsWith('0x')) displayName = identity.slice(0,6) + "..." + identity.slice(-4);
+                        else displayName = "User " + identity.slice(0,4); // "Discord User" se behtar
+
                         acc[identity] = { 
                             id: identity,
-                            // Agar row me username/avatar save hai to wo uthao, nahi to fallback
-                            username: curr.username || curr.uploader_name || (identity.startsWith('0x') ? 'Wallet User' : 'Discord User'),
-                            avatar: curr.avatar_url || curr.uploader_avatar || null, 
+                            username: displayName,
+                            avatar: curr.avatar_url || autoAvatar, 
                             artifacts: [],
                             isUpgraded: false
                         };
                     }
                     
-                    // Update Details if found in newer rows (Refine Metadata)
-                    if(curr.username && acc[identity].username.includes('User')) acc[identity].username = curr.username;
-                    if(curr.avatar_url && !acc[identity].avatar) acc[identity].avatar = curr.avatar_url;
+                    // Metadata Refinement
+                    if(curr.username) acc[identity].username = curr.username;
+                    if(curr.avatar_url) acc[identity].avatar = curr.avatar_url;
 
                     acc[identity].artifacts.push(curr);
                     
@@ -129,7 +127,6 @@ export default function Home() {
   };
   const handleLogout = async () => { await supabase.auth.signOut(); setUser(null); };
 
-  // --- FILTER LOGIC ---
   const displayedUsers = users.filter(u => {
     if (activeTab === 'ready_for_upgrade') return u.isUpgraded === true;
     return true;
@@ -196,7 +193,7 @@ export default function Home() {
                 </p>
                 </div>
 
-                {/* USER CARDS (Discord/Manual) */}
+                {/* USER CARDS (Auth/Upload) */}
                 <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center mb-20">
                     <div className="flex-1 w-full">
                         {!user ? (
@@ -271,7 +268,7 @@ export default function Home() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         
-                        {/* LIST 1: INCOMING STREAM (Fixed 'Unknown' issue) */}
+                        {/* LIST 1: INCOMING STREAM (Fixed: No 'Unknown') */}
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                             <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">INCOMING STREAM</h3>
                             <div className="max-h-[400px] overflow-y-auto pr-2">
@@ -280,8 +277,10 @@ export default function Home() {
                                     <div key={item.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className="text-white min-w-0">
-                                                {/* FIX: Filename fallback */}
-                                                <p className="font-bold truncate max-w-[150px]">{item.filename || item.name || "Untitled Artifact"}</p>
+                                                {/* FIX: Smart Filename Fallback */}
+                                                <p className="font-bold truncate max-w-[150px]">
+                                                    {item.filename || item.description?.substring(0,20) || `Artifact ${item.id.substring(0,4)}`}
+                                                </p>
                                                 <span className={`text-[10px] px-2 py-0.5 rounded ${
                                                     item.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
                                                 }`}>
@@ -311,7 +310,7 @@ export default function Home() {
                             </div>
                         </div>
 
-                        {/* LIST 2: ACTIVE NODES (Fixed Username & Avatar) */}
+                        {/* LIST 2: ACTIVE NODES (Fixed: Unique Avatars & Names) */}
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                              <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">
                                 {activeTab === 'ready_for_upgrade' ? 'UPGRADED NODES (VERIFIED)' : 'ACTIVE NODES'}
@@ -321,17 +320,11 @@ export default function Home() {
                                 {displayedUsers.map(u => (
                                     <div key={u.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
                                         <div className="flex items-center gap-3">
-                                            {/* FIX: Avatar Display */}
-                                            {u.avatar ? (
-                                                <img src={u.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover" />
-                                            ) : (
-                                                <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-xs font-bold text-gray-500">
-                                                    {u.username?.[0]?.toUpperCase() || "?"}
-                                                </div>
-                                            )}
+                                            {/* FIX: Smart Avatar */}
+                                            <img src={u.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover bg-black" />
                                             
                                             <div>
-                                                {/* FIX: Username Display */}
+                                                {/* FIX: Smart Username */}
                                                 <p className={`font-mono text-xs mb-1 ${u.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
                                                     {u.isUpgraded ? '★ UPGRADED' : u.username}
                                                 </p>
