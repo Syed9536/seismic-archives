@@ -10,6 +10,7 @@ import Link from "next/link";
 
 // --- ADMIN HELPER FUNCTIONS ---
 const deleteArtifact = async (artifactId: string, filePath: string) => {
+  if(!confirm("⚠️ Delete this item permanently?")) return;
   try {
     if (filePath) {
         await supabase.storage.from('artifacts').remove([filePath]);
@@ -19,7 +20,8 @@ const deleteArtifact = async (artifactId: string, filePath: string) => {
     return { success: true };
   } catch (error) {
     console.error("Delete failed:", error);
-    return { success: false, error };
+    alert("Delete failed.");
+    return { success: false };
   }
 };
 
@@ -29,7 +31,7 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false); 
 
-  // --- DASHBOARD DATA (Initial State Safe Rakha Hai) ---
+  // --- DASHBOARD DATA ---
   const [userArtifacts, setUserArtifacts] = useState<any[]>([]); 
   const [users, setUsers] = useState<any[]>([]); 
   const [activeTab, setActiveTab] = useState('all'); 
@@ -37,27 +39,24 @@ export default function Home() {
   // --- 1. AUTH ---
   useEffect(() => {
     const handleAuth = async () => {
+      setAuthLoading(true);
       try {
-        setAuthLoading(true);
         const hash = window.location.hash;
         if (hash && hash.includes("access_token")) {
             const params = new URLSearchParams(hash.substring(1));
             const accessToken = params.get("access_token");
             if (accessToken) {
-            const { data } = await supabase.auth.setSession({
+              const { data } = await supabase.auth.setSession({
                 access_token: accessToken,
                 refresh_token: params.get("refresh_token") || "",
-            });
-            if (data.session) setUser(data.session.user);
+              });
+              if (data.session) setUser(data.session.user);
             }
         }
         const { data: { session } } = await supabase.auth.getSession();
         if (session) setUser(session.user);
-      } catch (e) {
-        console.error("Auth Error:", e);
-      } finally {
-        setAuthLoading(false);
-      }
+      } catch(e) { console.error(e); }
+      setAuthLoading(false);
     };
     handleAuth();
 
@@ -69,19 +68,19 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- 2. DATA FETCHING (SAFE MODE) ---
+  // --- 2. ADMIN DATA FETCHING ---
   useEffect(() => {
-    const checkAdminAndFetch = async () => {
-        try {
-            const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
-            const adminStatus = checkIsAdmin(address, discordId);
-            setIsAdmin(adminStatus || false);
+    // Wrap in async function to avoid useEffect async issues
+    const runAdminLogic = async () => {
+        const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
+        const adminStatus = checkIsAdmin(address, discordId);
+        setIsAdmin(adminStatus || false);
 
-            if (adminStatus) {
+        if (adminStatus) {
+            try {
                 const { data: artifactsData, error } = await supabase.from('archives').select('*').order('created_at', { ascending: false });
                 
                 if (error) throw error;
-
                 if (artifactsData) {
                     setUserArtifacts(artifactsData);
 
@@ -90,7 +89,10 @@ export default function Home() {
                         const identity = curr.wallet_address || curr.user_id || 'unknown'; 
                         
                         if(!acc[identity]) {
-                            // Safe Defaults
+                            // Safe Avatar & Name
+                            const seed = identity === 'unknown' ? 'default' : identity;
+                            const autoAvatar = `https://api.dicebear.com/9.x/identicon/svg?seed=${seed}`;
+                            
                             let displayName = "Contributor";
                             if(curr.username) displayName = curr.username;
                             else if(identity.startsWith('0x')) displayName = identity.slice(0,6) + "..." + identity.slice(-4);
@@ -99,33 +101,30 @@ export default function Home() {
                             acc[identity] = { 
                                 id: identity,
                                 username: displayName,
-                                avatar: curr.avatar_url || null, 
+                                avatar: curr.avatar_url || autoAvatar, 
                                 artifacts: [],
                                 isUpgraded: false
                             };
                         }
                         
+                        // Metadata Refinement from newer rows
                         if(curr.username) acc[identity].username = curr.username;
                         if(curr.avatar_url) acc[identity].avatar = curr.avatar_url;
 
                         acc[identity].artifacts.push(curr);
-                        
-                        if(curr.status === 'verified') {
-                            acc[identity].isUpgraded = true;
-                        }
+                        if(curr.status === 'verified') acc[identity].isUpgraded = true;
                         
                         return acc;
                     }, {});
                     
                     setUsers(Object.values(groupedMap));
                 }
+            } catch (err) {
+                console.error("Fetch Error:", err);
             }
-        } catch (err) {
-            console.error("Admin Fetch Error:", err);
         }
     };
-
-    checkAdminAndFetch();
+    runAdminLogic();
   }, [user, address]);
 
   const handleDiscordLogin = async () => {
@@ -139,11 +138,9 @@ export default function Home() {
     return true;
   });
 
-  // Helper for User Name Display
+  // Safe User Display Name
   const getUserName = () => {
-      if(user?.user_metadata?.full_name) return user.user_metadata.full_name;
-      if(user?.email) return user.email.split('@')[0];
-      return "User";
+      return user?.user_metadata?.full_name || user?.email?.split('@')[0] || "User";
   }
 
   return (
@@ -161,9 +158,10 @@ export default function Home() {
         <div className="flex gap-4 items-center">
           {isAdmin && (
             <Link href="/admin">
-                <button className="hidden md:flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.6)] animate-pulse transition">
+                {/* Fixed: Button removed, styles applied to div/button replacement or directly */}
+                <div className="hidden md:flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.6)] animate-pulse transition cursor-pointer">
                     <LayoutDashboard size={14} /> ADMIN PANEL
-                </button>
+                </div>
             </Link>
           )}
           
@@ -264,7 +262,7 @@ export default function Home() {
                     </div>
                 </div>
 
-                {/* 🔥 ADMIN CONTROL CENTER 🔥 */}
+                {/* 🔥 ADMIN CONTROL CENTER (HTML FIXED) 🔥 */}
                 {isAdmin && (
                   <div className="border-t border-red-900/50 pt-10 mt-10">
                     <h2 className="text-2xl font-black text-red-600 mb-6 flex items-center gap-2">
@@ -273,11 +271,11 @@ export default function Home() {
 
                     {/* TABS */}
                     <div className="flex gap-4 mb-6">
-                        <button onClick={() => setActiveTab('all')} className={`text-sm px-4 py-2 rounded transition ${activeTab === 'all' ? 'bg-gray-800 text-white border border-gray-600' : 'text-gray-500 border border-transparent'}`}>
+                        <button onClick={() => setActiveTab('all')} className={`text-sm px-4 py-2 rounded transition border ${activeTab === 'all' ? 'bg-gray-800 text-white border-gray-600' : 'text-gray-500 border-transparent hover:border-gray-800'}`}>
                             All Contributors
                         </button>
-                        <button onClick={() => setActiveTab('ready_for_upgrade')} className={`text-sm border border-green-500/30 px-4 py-2 rounded transition ${activeTab === 'ready_for_upgrade' ? 'bg-green-500/20 text-green-400' : 'text-gray-500 hover:text-green-400'}`}>
-                            Ready for Upgrade 🎖️
+                        <button onClick={() => setActiveTab('ready_for_upgrade')} className={`text-sm border border-green-500/30 px-4 py-2 rounded transition flex items-center gap-2 ${activeTab === 'ready_for_upgrade' ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'text-gray-500 border-transparent hover:text-green-400'}`}>
+                            Verified / Upgraded 🎖️
                         </button>
                     </div>
 
@@ -286,10 +284,10 @@ export default function Home() {
                         {/* LIST 1: INCOMING STREAM */}
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                             <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">INCOMING STREAM</h3>
-                            <div className="max-h-[400px] overflow-y-auto pr-2">
+                            <div className="max-h-[400px] overflow-y-auto pr-2 space-y-2">
                                 {userArtifacts.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No artifacts found.</p>}
                                 {userArtifacts.map((item) => (
-                                    <div key={item.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
+                                    <div key={item.id} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className="text-white min-w-0">
                                                 <p className="font-bold truncate max-w-[150px]">
@@ -315,8 +313,11 @@ export default function Home() {
                                                 <Trash2 size={16} />
                                             </button>
 
-                                            <Link href={`/u/${item.user_id || item.wallet_address || '#'}`} className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded">
-                                                <ExternalLink size={16} />
+                                            {/* HTML FIX: Use div instead of button inside Link */}
+                                            <Link href={`/u/${item.user_id || item.wallet_address || '#'}`}>
+                                                <div className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded cursor-pointer">
+                                                    <ExternalLink size={16} />
+                                                </div>
                                             </Link>
                                         </div>
                                     </div>
@@ -329,19 +330,13 @@ export default function Home() {
                              <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">
                                 {activeTab === 'ready_for_upgrade' ? 'UPGRADED NODES (VERIFIED)' : 'ACTIVE NODES'}
                              </h3>
-                             <div className="max-h-[400px] overflow-y-auto pr-2">
+                             <div className="max-h-[400px] overflow-y-auto pr-2 space-y-2">
                                 {displayedUsers.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No contributors found.</p>}
                                 {displayedUsers.map(u => (
-                                    <div key={u.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
+                                    <div key={u.id} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
                                         <div className="flex items-center gap-3">
-                                            {/* Safe Avatar */}
-                                            {u.avatar ? (
-                                                <img src={u.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover bg-black" />
-                                            ) : (
-                                                <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-xs font-bold text-gray-500">
-                                                    {u.username.substring(0,2).toUpperCase()}
-                                                </div>
-                                            )}
+                                            {/* Avatar */}
+                                            <img src={u.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover bg-black" alt="avatar" />
                                             
                                             <div>
                                                 <p className={`font-mono text-xs mb-1 ${u.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
@@ -351,10 +346,11 @@ export default function Home() {
                                             </div>
                                         </div>
                                         
+                                        {/* HTML FIX: Link wraps a div, NOT a button */}
                                         <Link href={`/u/${u.id}`}>
-                                            <button className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 transition ${u.isUpgraded ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-white'}`}>
+                                            <div className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 transition cursor-pointer ${u.isUpgraded ? 'bg-yellow-500 text-black hover:bg-yellow-400' : 'bg-gray-800 text-white hover:bg-gray-700'}`}>
                                                 INSPECT 🔍
-                                            </button>
+                                            </div>
                                         </Link>
                                     </div>
                                 ))}
