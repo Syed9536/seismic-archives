@@ -44,31 +44,36 @@ export default function UserProfile() {
 
         // FETCH DATA
         const id = params.id as string;
-        // NOTE: Table name 'archives' hi hai
         let query = supabase.from("archives").select("*").order("created_at", { ascending: false });
 
+        // Logic: Agar ID 0x se start ho rahi hai to wallet_address check karo
         if (id.startsWith("0x")) {
-            // Try matching wallet_address OR user_id if wallet logic fails
-             const { data: walletData } = await supabase
+             // Pehle Wallet Address se try karo
+             const { data: walletData, error } = await supabase
                 .from("archives")
                 .select("*")
-                .eq("wallet_address", id) // Ye fail ho sakta hai agar column nahi hai
+                .eq("wallet_address", id) 
                 .order("created_at", { ascending: false });
              
-             if (walletData && walletData.length > 0) {
+             // Agar wallet se data mila to set karo
+             if (!error && walletData && walletData.length > 0) {
                  setArtifacts(walletData);
                  setLoading(false);
                  return;
              }
-             // Fallback to user_id check
-             query = query.eq("user_id", id);
+             
+             // Agar wallet data nahi mila, to fallback user_id try karo (UUID Error bachane ke liye try-catch zaroori nahi yahan query builder handle kar lega usually, but logic separate rakhna behtar hai)
+             // Lekin 0x id ko user_id (UUID) me daalne se hi error ata hai.
+             // Isliye agar walletData empty hai, aur id 0x hai, to hum assume karenge user naya hai ya data nahi hai.
+             setArtifacts([]);
+             setLoading(false);
         } else {
+            // Normal User ID
             query = query.eq("user_id", id);
+            const { data } = await query;
+            if (data) setArtifacts(data);
+            setLoading(false);
         }
-
-        const { data } = await query;
-        if (data) setArtifacts(data);
-        setLoading(false);
     };
 
     init();
@@ -93,13 +98,13 @@ export default function UserProfile() {
       setIsAdmin(status || false);
   }, [address, currentUser]);
 
-  // --- 3. ACTIONS (DELETE & UPGRADE) ---
+  // --- 3. ACTIONS ---
   
-  // A. DELETE FUNCTION (Fixed)
+  // A. DELETE FUNCTION (FIXED)
   const deleteItem = async (artifactId: string, filePath: string) => {
     if(!confirm("⚠️ DELETE PERMANENTLY?")) return;
     
-    // UI se hatao pehle (Optimistic Update)
+    // UI Update (Optimistic)
     const prevArtifacts = [...artifacts];
     setArtifacts(prev => prev.filter(item => item.id !== artifactId));
 
@@ -109,41 +114,42 @@ export default function UserProfile() {
              await supabase.storage.from('artifacts').remove([filePath]);
         }
         
-        // 2. Database Delete (Table: archives)
+        // 2. Database Delete
+        // Ensure RLS policy Step 1 wali run ho chuki ho
         const { error } = await supabase.from('archives').delete().eq('id', artifactId);
         
         if (error) throw error;
 
     } catch (error: any) {
         console.error("Delete Failed:", error);
-        alert("Delete Failed (Check RLS Policies in SQL Editor): " + error.message);
-        setArtifacts(prevArtifacts); // Revert if failed
+        alert("Delete Failed: " + error.message);
+        setArtifacts(prevArtifacts); // Revert UI if fail
     }
   };
 
-  // B. UPGRADE USER FUNCTION (Fixed Schema Error)
+  // B. UPGRADE USER FUNCTION (FIXED UUID ERROR)
   const verifyUserForUpgrade = async () => {
     if(!confirm("Mark this node for ROLE UPGRADE?")) return;
 
     const id = params.id as string;
-    
-    // Simple update: Agar user_id match kare
-    let { error } = await supabase
-        .from('archives')
-        .update({ status: 'verified' }) // Ye column ab Step 1 SQL se ban jayega
-        .eq('user_id', id);
+    let error = null;
 
-    // Agar user_id se 0 rows update hui, aur ye wallet user hai, to wallet_address try karo
-    if (id.startsWith("0x") && (!error)) {
-         // Check if wallet_address column exists before querying to avoid crash
-         const { error: walletError } = await supabase
+    // 🔥 FIX: Check agar ID Wallet Address hai ya UUID
+    if (id.startsWith("0x")) {
+        // WALLET USER UPDATE
+        // Hum 'wallet_address' column ko target karenge, 'user_id' ko nahi
+        const res = await supabase
             .from('archives')
             .update({ status: 'verified' })
-            .eq('wallet_address', id);
-         
-         if (walletError) {
-             console.log("Wallet column might be missing, ignoring...");
-         }
+            .eq('wallet_address', id); // UUID error yahan fix hoga
+        error = res.error;
+    } else {
+        // DISCORD USER UPDATE (UUID)
+        const res = await supabase
+            .from('archives')
+            .update({ status: 'verified' })
+            .eq('user_id', id);
+        error = res.error;
     }
 
     if(!error) {
