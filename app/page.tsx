@@ -77,20 +77,20 @@ export default function Home() {
             if (artifactsData) {
                 setUserArtifacts(artifactsData);
 
-                // --- SMART GROUPING & AVATAR GENERATION ---
+                // --- SMART GROUPING & CRASH PREVENTION ---
                 const groupedMap = artifactsData.reduce((acc: any, curr: any) => {
                     const identity = curr.wallet_address || curr.user_id || 'unknown'; 
                     
                     if(!acc[identity]) {
-                        // Agar DB me username/avatar nahi hai to hum GENERATE karenge
-                        // 1. Avatar: DiceBear API se Unique ID ke basis par
-                        const autoAvatar = `https://api.dicebear.com/9.x/identicon/svg?seed=${identity}`;
+                        // Safe Avatar Generation
+                        const seed = identity === 'unknown' ? 'random' : identity;
+                        const autoAvatar = `https://api.dicebear.com/9.x/identicon/svg?seed=${seed}`;
                         
-                        // 2. Name: Agar wallet hai to short address, nahi to Short ID
+                        // Safe Name Logic
                         let displayName = "Contributor";
                         if(curr.username) displayName = curr.username;
                         else if(identity.startsWith('0x')) displayName = identity.slice(0,6) + "..." + identity.slice(-4);
-                        else displayName = "User " + identity.slice(0,4); // "Discord User" se behtar
+                        else displayName = "User " + identity.slice(0,4);
 
                         acc[identity] = { 
                             id: identity,
@@ -152,10 +152,12 @@ export default function Home() {
                 </button>
             </Link>
           )}
+          
+          {/* SAFE USER DISPLAY (Crash Fixed here using ?.) */}
           {user && (
             <div className="hidden md:flex items-center gap-2 text-xs text-green-400 border border-green-900 px-3 py-1 rounded-full bg-green-900/10">
                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-               {user.user_metadata.full_name?.split(" ")[0]}
+               {user?.user_metadata?.full_name?.split(" ")[0] || "User"}
             </div>
           )}
           <div className="shadow-[0_0_15px_rgba(34,197,94,0.3)] rounded-xl">
@@ -186,14 +188,14 @@ export default function Home() {
                 
                 <p className="text-gray-400 text-xl max-w-2xl mx-auto">
                     {user 
-                    ? `Welcome back, ${user.user_metadata.full_name}.` 
+                    ? `Welcome back, ${user?.user_metadata?.full_name || 'User'}.` 
                     : isConnected 
                         ? "Wallet Connected. You may verify with Discord for full access."
                         : "The decentralized vault for Seismic Community artifacts."}
                 </p>
                 </div>
 
-                {/* USER CARDS (Auth/Upload) */}
+                {/* USER CARDS */}
                 <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center mb-20">
                     <div className="flex-1 w-full">
                         {!user ? (
@@ -211,9 +213,9 @@ export default function Home() {
                             <div className="absolute top-0 right-0 p-4 opacity-10"><User size={100} /></div>
                             <div>
                             <div className="flex items-center gap-4 mb-6">
-                                <img src={user.user_metadata.avatar_url} className="w-20 h-20 rounded-full border-4 border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.5)]" />
+                                <img src={user?.user_metadata?.avatar_url} className="w-20 h-20 rounded-full border-4 border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.5)]" />
                                 <div>
-                                <h3 className="text-3xl font-bold text-white">{user.user_metadata.full_name}</h3>
+                                <h3 className="text-3xl font-bold text-white">{user?.user_metadata?.full_name}</h3>
                                 <p className="text-green-400 text-sm font-mono tracking-wider">VERIFIED</p>
                                 </div>
                             </div>
@@ -268,7 +270,7 @@ export default function Home() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         
-                        {/* LIST 1: INCOMING STREAM (Fixed: No 'Unknown') */}
+                        {/* LIST 1: INCOMING STREAM */}
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                             <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">INCOMING STREAM</h3>
                             <div className="max-h-[400px] overflow-y-auto pr-2">
@@ -277,9 +279,9 @@ export default function Home() {
                                     <div key={item.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className="text-white min-w-0">
-                                                {/* FIX: Smart Filename Fallback */}
+                                                {/* SAFE FALLBACK FOR FILENAME */}
                                                 <p className="font-bold truncate max-w-[150px]">
-                                                    {item.filename || item.description?.substring(0,20) || `Artifact ${item.id.substring(0,4)}`}
+                                                    {item.filename || item.name || `Artifact ${item.id.slice(0,4)}`}
                                                 </p>
                                                 <span className={`text-[10px] px-2 py-0.5 rounded ${
                                                     item.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
@@ -301,7 +303,7 @@ export default function Home() {
                                                 <Trash2 size={16} />
                                             </button>
 
-                                            <Link href={`/u/${item.user_id || item.wallet_address}`} className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded">
+                                            <Link href={`/u/${item.user_id || item.wallet_address || '#'}`} className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded">
                                                 <ArrowUpRight size={16} />
                                             </Link>
                                         </div>
@@ -310,7 +312,7 @@ export default function Home() {
                             </div>
                         </div>
 
-                        {/* LIST 2: ACTIVE NODES (Fixed: Unique Avatars & Names) */}
+                        {/* LIST 2: ACTIVE NODES */}
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                              <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">
                                 {activeTab === 'ready_for_upgrade' ? 'UPGRADED NODES (VERIFIED)' : 'ACTIVE NODES'}
@@ -320,11 +322,11 @@ export default function Home() {
                                 {displayedUsers.map(u => (
                                     <div key={u.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
                                         <div className="flex items-center gap-3">
-                                            {/* FIX: Smart Avatar */}
+                                            {/* SAFE AVATAR RENDER */}
                                             <img src={u.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover bg-black" />
                                             
                                             <div>
-                                                {/* FIX: Smart Username */}
+                                                {/* SAFE USERNAME RENDER */}
                                                 <p className={`font-mono text-xs mb-1 ${u.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
                                                     {u.isUpgraded ? '★ UPGRADED' : u.username}
                                                 </p>
