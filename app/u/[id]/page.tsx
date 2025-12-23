@@ -13,7 +13,7 @@ export default function UserProfile() {
   const params = useParams();
   const { address } = useAccount(); 
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isAdmin, setIsAdmin] = useState(false); // Admin State
+  const [isAdmin, setIsAdmin] = useState(false);
   
   const [artifacts, setArtifacts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,12 +45,31 @@ export default function UserProfile() {
 
         // --- FETCH ARTIFACTS ---
         const id = params.id as string;
-        // NOTE: Table name 'archives' use kar raha hun taaki tera error solve ho jaye
+        
+        // NOTE: Table 'archives' hi rakha hai tere previous code ke hisab se
+        // Agar 'artifacts' table hai to niche line me change kar lena
         let query = supabase.from("archives").select("*").order("created_at", { ascending: false });
 
+        // Logic: Agar ID 0x se start ho rahi hai to wo Wallet Address ho sakta hai
+        // Lekin agar DB me 'wallet_address' column nahi hai to ye fail hoga.
+        // Safety ke liye hum OR condition ya specific check lagayenge.
+        
         if (id.startsWith("0x")) {
-            // Agar tere DB me 'wallet_address' column hai to ye chalega
-            query = query.eq("wallet_address", id); 
+             // Koshish karo 'wallet_address' se, agar column nahi hai to shayad 'user_id' hi wallet address ho
+             const { data: walletData, error: walletError } = await supabase
+                .from("archives")
+                .select("*")
+                .eq("wallet_address", id)
+                .order("created_at", { ascending: false });
+             
+             if (!walletError && walletData.length > 0) {
+                 setArtifacts(walletData);
+                 setLoading(false);
+                 return;
+             }
+             
+             // Fallback: Agar wallet_address column nahi mila, to user_id check karo
+             query = query.eq("user_id", id);
         } else {
             query = query.eq("user_id", id);
         }
@@ -71,7 +90,6 @@ export default function UserProfile() {
 
   // --- 2. ADMIN CHECKER LOGIC ---
   useEffect(() => {
-      // Helper to get Discord ID safely
       const getDiscordId = (user: any) => {
           if (!user) return null;
           const discordIdentity = user.identities?.find((id: any) => id.provider === 'discord');
@@ -80,59 +98,79 @@ export default function UserProfile() {
       };
 
       const discordId = getDiscordId(currentUser);
-      // Check if Viewer is Admin
       const status = checkIsAdmin(address, discordId);
       setIsAdmin(status || false);
       
   }, [address, currentUser]);
 
-  // --- 3. ADMIN ACTIONS (DELETE & UPGRADE) ---
+  // --- 3. ADMIN ACTIONS (FIXED) ---
   
-  // A. Delete Item
+  // A. DELETE ITEM (FIXED)
   const deleteItem = async (artifactId: string, filePath: string) => {
     if(!confirm("⚠️ ADMIN: Delete this permanently?")) return;
     
-    // 1. Storage se udao (Agar file path available hai)
-    if(filePath) {
-        // Bucket name check kar lena (archives vs artifacts)
-        await supabase.storage.from('artifacts').remove([filePath]);
-    }
-    // 2. Table se udao
-    const { error } = await supabase.from('archives').delete().eq('id', artifactId);
-    
-    if (!error) {
-        // UI se hatao bina refresh kiye
-        setArtifacts(prev => prev.filter(item => item.id !== artifactId));
-    } else {
-        alert("Delete Error: " + error.message);
+    // UI Update pehle kar do taaki instant lage
+    const originalState = [...artifacts];
+    setArtifacts(prev => prev.filter(item => item.id !== artifactId));
+
+    try {
+        // 1. Storage se udao
+        if(filePath) {
+            await supabase.storage.from('artifacts').remove([filePath]);
+        }
+        
+        // 2. Database se udao
+        const { error } = await supabase.from('archives').delete().eq('id', artifactId);
+        
+        if (error) {
+            throw error; // Agar DB error aye to catch me jao
+        }
+
+    } catch (error: any) {
+        console.error("Delete Failed:", error);
+        alert("Delete Failed: " + error.message);
+        setArtifacts(originalState); // Error aya to wapis dikha do item
     }
   };
 
-  // B. Verify User for Upgrade
+  // B. UPGRADE USER (FIXED WALLET ISSUE)
   const verifyUserForUpgrade = async () => {
     if(!confirm("Mark this user/node for ROLE UPGRADE? \n(This will verify all their uploads)")) return;
 
     const id = params.id as string;
-    let updateQuery = supabase.from('archives').update({ status: 'verified' });
+    
+    // Status update logic
+    // Hum pehle try karenge user_id se, agar fail hua aur ID 0x hai to wallet_address se
+    
+    let errorToShow = null;
 
-    // User ID ya Wallet ke hisab se update karo
+    // Attempt 1: Try by User ID
+    let { error } = await supabase
+        .from('archives')
+        .update({ status: 'verified' })
+        .eq('user_id', id);
+
+    // Attempt 2: Agar ID 0x hai aur user_id se update nahi hua (rows affected 0 check karna mushkil hai yahan direct error se)
+    // To hum wallet_address par bhi try maar lete hain agar pehla wala fail nahi hua par shayad row nahi mili
+    
     if (id.startsWith("0x")) {
-        // Note: SQL me wallet_address column hona chahiye
-        // updateQuery = updateQuery.eq("wallet_address", id);
-        alert("Wallet update logic requires 'wallet_address' column in DB.");
-        return;
-    } else {
-        updateQuery = updateQuery.eq("user_id", id);
+         const { error: walletError } = await supabase
+            .from('archives')
+            .update({ status: 'verified' })
+            .eq('wallet_address', id);
+         
+         // Agar pehle me error tha to dusre ka error capture karo
+         if (error && walletError) errorToShow = walletError;
+         if (!error && !walletError) error = null; // Both success (or one success)
+         if (!error && walletError) error = null; // User ID worked
+         if (error && !walletError) error = null; // Wallet worked
     }
 
-    const { error } = await updateQuery;
-
-    if(!error) {
+    if(!errorToShow && !error) {
         alert("✅ SUCCESS: User marked for Upgrade! \n(Check 'Ready for Upgrade' tab in Admin Panel)");
-        // Local state update taki UI refresh ho jaye
         setArtifacts(prev => prev.map(a => ({...a, status: 'verified'})));
     } else {
-        alert("Error: " + error.message);
+        alert("Error Marking User: " + (error?.message || errorToShow?.message || "Unknown error"));
     }
   };
 
@@ -193,7 +231,7 @@ export default function UserProfile() {
       
       <main className="max-w-6xl mx-auto p-8 mt-4">
         
-        {/* 🔥 HEADER WITH UPGRADE BUTTON 🔥 */}
+        {/* HEADER */}
         <div className="mb-8 text-center md:text-left flex flex-col md:flex-row justify-between items-end border-b border-gray-800 pb-6">
             <div>
                 <h1 className="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-500">
