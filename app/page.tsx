@@ -4,15 +4,15 @@ import { supabase } from "@/utils/supabase/client";
 import { useState, useEffect } from "react";
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi'; 
-import { checkIsAdmin } from "@/utils/admins"; // Import Admin Check
-import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2, ShieldAlert, LayoutDashboard } from "lucide-react";
+import { checkIsAdmin } from "@/utils/admins"; 
+import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2, ShieldAlert, LayoutDashboard, Lock } from "lucide-react"; // Lock icon add kiya
 import Link from "next/link";
 
 export default function Home() {
   const { address, isConnected } = useAccount(); 
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false); // Admin state
+  const [isAdmin, setIsAdmin] = useState(false); 
 
   // --- 1. AUTH HANDLING ---
   useEffect(() => {
@@ -55,14 +55,15 @@ export default function Home() {
 
   // --- 2. ADMIN CHECKER ---
   useEffect(() => {
-    // Check if wallet OR discord user is admin
     const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
     const adminStatus = checkIsAdmin(address, discordId);
     setIsAdmin(adminStatus || false);
   }, [user, address]);
 
 
-  // --- 3. REDIRECT FIX (RETURN TICKET) ---
+  // --- 3. REDIRECT FIX (GLITCH FIX HERE) ---
+  // Bhai maine isko comment kar diya hai. Ye code hi auto-redirect kar raha tha.
+  /*
   useEffect(() => {
     if (user) {
         const returnUrl = localStorage.getItem('seismic_return_url');
@@ -72,6 +73,7 @@ export default function Home() {
         }
     }
   }, [user]);
+  */
 
 
   const handleDiscordLogin = async () => {
@@ -100,8 +102,6 @@ export default function Home() {
         </div>
         
         <div className="flex gap-4 items-center">
-            
-          {/* 🔥 ADMIN DASHBOARD BUTTON (Only Visible to Admins) 🔥 */}
           {isAdmin && (
             <Link href="/admin">
                 <button className="hidden md:flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.6)] animate-pulse transition">
@@ -138,7 +138,6 @@ export default function Home() {
                     <span className="text-green-500">{(user || isConnected) ? "GRANTED" : "CONTRIBUTION"}</span>
                 </h1>
                 
-                {/* ADMIN MESSAGE */}
                 {isAdmin && (
                     <div className="max-w-md mx-auto bg-red-900/10 border border-red-900 p-3 rounded-lg text-red-400 text-sm font-bold flex items-center justify-center gap-2">
                         <ShieldAlert size={16} /> Welcome, Administrator.
@@ -200,19 +199,33 @@ export default function Home() {
                         </div>
                     </div>
 
-                    {/* RIGHT: MANUAL UPLOAD */}
+                    {/* RIGHT: MANUAL UPLOAD - FIXED (ONLY CLICKABLE IF VERIFIED) */}
                     <div className="flex-1 w-full">
-                        <Link href="/upload">
-                        <div className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-green-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
-                            <div>
-                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><UploadCloud size={100} /></div>
-                            <div className="bg-green-500/10 w-fit p-3 rounded-xl mb-6"><UploadCloud className="text-green-400 w-8 h-8" /></div>
-                            <h3 className="text-2xl font-bold mb-2 group-hover:text-green-400 transition-colors">Manual Upload</h3>
-                            <p className="text-gray-400 mb-6">Upload your contribution and save to wallet.</p>
+                        {user ? (
+                            // Agar User Verified hai to ye dikhega (Clickable)
+                            <Link href="/upload">
+                            <div className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-green-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
+                                <div>
+                                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><UploadCloud size={100} /></div>
+                                <div className="bg-green-500/10 w-fit p-3 rounded-xl mb-6"><UploadCloud className="text-green-400 w-8 h-8" /></div>
+                                <h3 className="text-2xl font-bold mb-2 group-hover:text-green-400 transition-colors">Manual Upload</h3>
+                                <p className="text-gray-400 mb-6">Upload your contribution and save to vault.</p>
+                                </div>
+                                <span className="text-green-400 text-sm font-bold flex items-center gap-2">START UPLOAD &rarr;</span>
                             </div>
-                            <span className="text-green-400 text-sm font-bold flex items-center gap-2">START UPLOAD &rarr;</span>
-                        </div>
-                        </Link>
+                            </Link>
+                        ) : (
+                            // Agar User Verified NAHI hai to ye dikhega (Locked)
+                            <div className="border border-gray-800 bg-black/40 p-10 rounded-2xl relative overflow-hidden h-full flex flex-col justify-between opacity-50 cursor-not-allowed">
+                                <div>
+                                    <div className="absolute top-0 right-0 p-4 opacity-5"><UploadCloud size={100} /></div>
+                                    <div className="bg-gray-800/50 w-fit p-3 rounded-xl mb-6"><Lock className="text-gray-500 w-8 h-8" /></div>
+                                    <h3 className="text-2xl font-bold mb-2 text-gray-500">Manual Upload</h3>
+                                    <p className="text-gray-600 mb-6">Verify your Discord identity to unlock upload access.</p>
+                                </div>
+                                <span className="text-gray-600 text-sm font-bold flex items-center gap-2">LOCKED 🔒</span>
+                            </div>
+                        )}
                     </div>
 
                 </div>
