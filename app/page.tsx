@@ -11,11 +11,9 @@ import Link from "next/link";
 // --- ADMIN HELPER FUNCTIONS ---
 const deleteArtifact = async (artifactId: string, filePath: string) => {
   try {
-    // 1. Storage Delete
     if (filePath) {
         await supabase.storage.from('artifacts').remove([filePath]);
     }
-    // 2. DB Delete (Table 'archives' kar diya hai taaki error na aaye)
     const { error: dbError } = await supabase.from('archives').delete().eq('id', artifactId);
     if (dbError) throw dbError;
     return { success: true };
@@ -26,12 +24,12 @@ const deleteArtifact = async (artifactId: string, filePath: string) => {
 };
 
 const verifyArtifact = async (artifactId: string) => {
-  // Table 'archives' fix
   const { error } = await supabase.from('archives').update({ status: 'verified' }).eq('id', artifactId);
   return { success: !error };
 };
 
 const markUserForUpgrade = async (userId: string) => {
+   // Console log for debug (Actual logic runs in the Profile Page)
    console.log("Marking user for upgrade:", userId);
 };
 
@@ -41,7 +39,7 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false); 
 
-  // --- NEW STATE FOR ADMIN DASHBOARD ---
+  // --- ADMIN DASHBOARD STATE ---
   const [userArtifacts, setUserArtifacts] = useState<any[]>([]); 
   const [users, setUsers] = useState<any[]>([]); 
   const [activeTab, setActiveTab] = useState('all'); 
@@ -50,30 +48,22 @@ export default function Home() {
   useEffect(() => {
     const handleAuth = async () => {
       setAuthLoading(true);
-
       const hash = window.location.hash;
       if (hash && hash.includes("access_token")) {
         const params = new URLSearchParams(hash.substring(1));
         const accessToken = params.get("access_token");
-        const refreshToken = params.get("refresh_token");
-
         if (accessToken) {
           const { data } = await supabase.auth.setSession({
             access_token: accessToken,
-            refresh_token: refreshToken || "",
+            refresh_token: params.get("refresh_token") || "",
           });
-          if (data.session) {
-             setUser(data.session.user);
-          }
+          if (data.session) setUser(data.session.user);
         }
       }
-
       const { data: { session } } = await supabase.auth.getSession();
       if (session) setUser(session.user);
-      
       setAuthLoading(false);
     };
-
     handleAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -81,49 +71,52 @@ export default function Home() {
       if (event === 'SIGNED_OUT') setUser(null);
       setAuthLoading(false);
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- 2. ADMIN CHECKER & DATA FETCHING ---
+  // --- 2. ADMIN DATA FETCHING ---
   useEffect(() => {
     const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
     const adminStatus = checkIsAdmin(address, discordId);
     setIsAdmin(adminStatus || false);
 
-    // Agar Admin hai to Data Fetch karo
     if (adminStatus) {
         const fetchAdminData = async () => {
-            // FIX: Table 'archives' se data le rahe hain
             const { data: artifactsData } = await supabase.from('archives').select('*').order('created_at', { ascending: false });
             
             if (artifactsData) {
                 setUserArtifacts(artifactsData);
 
-                // FIX: User Grouping Logic (Wallet + UserID Support)
-                // Ye zaroori hai taaki list khali na dikhe
-                const groupedUsers = Object.values(artifactsData.reduce((acc: any, curr: any) => {
+                // --- SMART GROUPING LOGIC (Fixes Unknown User/PFP) ---
+                const groupedMap = artifactsData.reduce((acc: any, curr: any) => {
+                    // Identity Priority: Wallet -> UserID -> Random
                     const identity = curr.wallet_address || curr.user_id || 'unknown'; 
                     
                     if(!acc[identity]) {
                         acc[identity] = { 
-                            id: identity, 
+                            id: identity,
+                            // Agar row me username/avatar save hai to wo uthao, nahi to fallback
+                            username: curr.username || curr.uploader_name || (identity.startsWith('0x') ? 'Wallet User' : 'Discord User'),
+                            avatar: curr.avatar_url || curr.uploader_avatar || null, 
                             artifacts: [],
-                            isUpgraded: false // Flag for Upgrade Tab
+                            isUpgraded: false
                         };
                     }
                     
+                    // Update Details if found in newer rows (Refine Metadata)
+                    if(curr.username && acc[identity].username.includes('User')) acc[identity].username = curr.username;
+                    if(curr.avatar_url && !acc[identity].avatar) acc[identity].avatar = curr.avatar_url;
+
                     acc[identity].artifacts.push(curr);
                     
-                    // Agar verified hai to upgrade flag true karo
                     if(curr.status === 'verified') {
                         acc[identity].isUpgraded = true;
                     }
                     
                     return acc;
-                }, {}));
+                }, {});
                 
-                setUsers(groupedUsers);
+                setUsers(Object.values(groupedMap));
             }
         };
         fetchAdminData();
@@ -132,23 +125,13 @@ export default function Home() {
 
   const handleDiscordLogin = async () => {
     setAuthLoading(true);
-    await supabase.auth.signInWithOAuth({
-      provider: 'discord',
-      options: { redirectTo: window.location.origin },
-    });
+    await supabase.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo: window.location.origin } });
   };
+  const handleLogout = async () => { await supabase.auth.signOut(); setUser(null); };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-  };
-
-  // --- FILTER LOGIC FOR ADMIN TABS ---
+  // --- FILTER LOGIC ---
   const displayedUsers = users.filter(u => {
-    if (activeTab === 'ready_for_upgrade') {
-        // Sirf upgraded/verified users dikhao
-        return u.isUpgraded === true;
-    }
+    if (activeTab === 'ready_for_upgrade') return u.isUpgraded === true;
     return true;
   });
 
@@ -172,7 +155,6 @@ export default function Home() {
                 </button>
             </Link>
           )}
-
           {user && (
             <div className="hidden md:flex items-center gap-2 text-xs text-green-400 border border-green-900 px-3 py-1 rounded-full bg-green-900/10">
                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
@@ -185,9 +167,7 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* HERO SECTION */}
       <main className="max-w-6xl mx-auto p-8 mt-10">
-        
         {authLoading ? (
             <div className="flex flex-col items-center justify-center min-h-[50vh]">
                 <Loader2 className="animate-spin text-green-500 w-16 h-16 mb-4" />
@@ -216,10 +196,8 @@ export default function Home() {
                 </p>
                 </div>
 
-                {/* MAIN CARDS */}
+                {/* USER CARDS (Discord/Manual) */}
                 <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center mb-20">
-                    
-                    {/* LEFT: DISCORD CARD */}
                     <div className="flex-1 w-full">
                         {!user ? (
                         <div onClick={handleDiscordLogin} className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-indigo-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
@@ -242,27 +220,11 @@ export default function Home() {
                                 <p className="text-green-400 text-sm font-mono tracking-wider">VERIFIED</p>
                                 </div>
                             </div>
-                            <div className="space-y-3 mb-8 bg-black/30 p-4 rounded-lg border border-green-900/30">
-                                <p className="text-gray-400 text-sm">Discord Connected ✅</p>
-                                <p className="text-gray-500 text-xs truncate">ID: {user.id}</p>
-                            </div>
-                            </div>
                             <button onClick={handleLogout} className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 px-4 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition border border-red-900/30"><LogOut size={16} /> DISCONNECT</button>
+                            </div>
                         </div>
                         )}
                     </div>
-
-                    {/* DIVIDER */}
-                    <div className="flex items-center justify-center md:flex-col relative shrink-0">
-                        <div className="absolute inset-0 flex items-center justify-center md:flex-col">
-                        <div className="w-full h-px md:w-px md:h-full bg-gray-800"></div>
-                        </div>
-                        <div className="relative bg-black p-2">
-                            <span className="text-gray-500 text-xs font-bold border border-gray-800 px-3 py-2 rounded-full bg-gray-900/50 shadow-xl">OR</span>
-                        </div>
-                    </div>
-
-                    {/* RIGHT: MANUAL UPLOAD */}
                     <div className="flex-1 w-full">
                         {user ? (
                             <Link href="/upload">
@@ -290,7 +252,7 @@ export default function Home() {
                     </div>
                 </div>
 
-                {/* 🔥 ADMIN CONTROL CENTER (Updated with Fixes) 🔥 */}
+                {/* 🔥 ADMIN CONTROL CENTER 🔥 */}
                 {isAdmin && (
                   <div className="border-t border-red-900/50 pt-10 mt-10">
                     <h2 className="text-2xl font-black text-red-600 mb-6 flex items-center gap-2">
@@ -309,7 +271,7 @@ export default function Home() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         
-                        {/* LIST 1: INCOMING ARTIFACTS */}
+                        {/* LIST 1: INCOMING STREAM (Fixed 'Unknown' issue) */}
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                             <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">INCOMING STREAM</h3>
                             <div className="max-h-[400px] overflow-y-auto pr-2">
@@ -318,7 +280,8 @@ export default function Home() {
                                     <div key={item.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className="text-white min-w-0">
-                                                <p className="font-bold truncate max-w-[150px]">{item.filename || "Unknown"}</p>
+                                                {/* FIX: Filename fallback */}
+                                                <p className="font-bold truncate max-w-[150px]">{item.filename || item.name || "Untitled Artifact"}</p>
                                                 <span className={`text-[10px] px-2 py-0.5 rounded ${
                                                     item.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
                                                 }`}>
@@ -348,7 +311,7 @@ export default function Home() {
                             </div>
                         </div>
 
-                        {/* LIST 2: USERS / CONTRIBUTORS (Fixed Grouping) */}
+                        {/* LIST 2: ACTIVE NODES (Fixed Username & Avatar) */}
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                              <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">
                                 {activeTab === 'ready_for_upgrade' ? 'UPGRADED NODES (VERIFIED)' : 'ACTIVE NODES'}
@@ -357,12 +320,23 @@ export default function Home() {
                                 {displayedUsers.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No contributors found.</p>}
                                 {displayedUsers.map(u => (
                                     <div key={u.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
-                                        <div>
-                                            <p className={`font-mono text-xs mb-1 ${u.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
-                                                {u.isUpgraded ? '★ UPGRADED' : 'CONTRIBUTOR'}
-                                            </p>
-                                            <p className="font-bold text-sm text-white break-all">{u.id}</p>
-                                            <p className="text-xs text-gray-500 mt-1">{u.artifacts.length} Uploads</p>
+                                        <div className="flex items-center gap-3">
+                                            {/* FIX: Avatar Display */}
+                                            {u.avatar ? (
+                                                <img src={u.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover" />
+                                            ) : (
+                                                <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-xs font-bold text-gray-500">
+                                                    {u.username?.[0]?.toUpperCase() || "?"}
+                                                </div>
+                                            )}
+                                            
+                                            <div>
+                                                {/* FIX: Username Display */}
+                                                <p className={`font-mono text-xs mb-1 ${u.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
+                                                    {u.isUpgraded ? '★ UPGRADED' : u.username}
+                                                </p>
+                                                <p className="font-bold text-xs text-gray-400 break-all truncate max-w-[120px]">{u.id}</p>
+                                            </div>
                                         </div>
                                         
                                         <Link href={`/u/${u.id}`}>
@@ -379,7 +353,6 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* FOOTER */}
                 {(user || isConnected) && (
                 <div className="text-center mt-12 pb-10">
                     <Link href={`/u/${user ? user.id : address}`} className="inline-flex items-center gap-2 text-gray-400 hover:text-green-500 transition border-b border-transparent hover:border-green-500 pb-1">
