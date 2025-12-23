@@ -5,14 +5,43 @@ import { useState, useEffect } from "react";
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi'; 
 import { checkIsAdmin } from "@/utils/admins"; 
-import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2, ShieldAlert, LayoutDashboard, Lock } from "lucide-react"; // Lock icon add kiya
+import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2, ShieldAlert, LayoutDashboard, Lock, Trash2, CheckCircle, XCircle } from "lucide-react"; // Added Icons
 import Link from "next/link";
+
+// --- ADMIN HELPER FUNCTIONS (Added here as requested) ---
+const deleteArtifact = async (artifactId: string, filePath: string) => {
+  try {
+    const { error: storageError } = await supabase.storage.from('artifacts').remove([filePath]);
+    if (storageError) throw storageError;
+    const { error: dbError } = await supabase.from('artifacts').delete().eq('id', artifactId);
+    if (dbError) throw dbError;
+    return { success: true };
+  } catch (error) {
+    console.error("Delete failed:", error);
+    return { success: false, error };
+  }
+};
+
+const verifyArtifact = async (artifactId: string) => {
+  const { error } = await supabase.from('artifacts').update({ status: 'verified' }).eq('id', artifactId);
+  return { success: !error };
+};
+
+const markUserForUpgrade = async (userId: string) => {
+   // Note: Client side admin update usually requires an Edge Function, but leaving logic here as requested.
+   console.log("Marking user for upgrade:", userId);
+};
 
 export default function Home() {
   const { address, isConnected } = useAccount(); 
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false); 
+
+  // --- NEW STATE FOR ADMIN DASHBOARD ---
+  const [userArtifacts, setUserArtifacts] = useState<any[]>([]); // For Snippet 1
+  const [users, setUsers] = useState<any[]>([]); // For Snippet 2
+  const [activeTab, setActiveTab] = useState('all'); // For Snippet 2
 
   // --- 1. AUTH HANDLING ---
   useEffect(() => {
@@ -53,28 +82,34 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- 2. ADMIN CHECKER ---
+  // --- 2. ADMIN CHECKER & DATA FETCHING ---
   useEffect(() => {
     const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
     const adminStatus = checkIsAdmin(address, discordId);
     setIsAdmin(adminStatus || false);
-  }, [user, address]);
 
+    // Agar Admin hai to Data Fetch karo (Artifacts & Users)
+    if (adminStatus) {
+        const fetchAdminData = async () => {
+            // 1. Fetch All Artifacts
+            const { data: artifactsData } = await supabase.from('artifacts').select('*').order('created_at', { ascending: false });
+            if (artifactsData) {
+                setUserArtifacts(artifactsData);
 
-  // --- 3. REDIRECT FIX (GLITCH FIX HERE) ---
-  // Bhai maine isko comment kar diya hai. Ye code hi auto-redirect kar raha tha.
-  /*
-  useEffect(() => {
-    if (user) {
-        const returnUrl = localStorage.getItem('seismic_return_url');
-        if (returnUrl) {
-            localStorage.removeItem('seismic_return_url'); 
-            window.location.href = returnUrl; 
-        }
+                // 2. Generate User List from Artifacts (Grouping by user_id)
+                // Ye logic 'artifacts' array se unique users nikalega taaki Snippet 2 kaam kare
+                const groupedUsers = Object.values(artifactsData.reduce((acc: any, curr: any) => {
+                    const uid = curr.user_id || 'unknown'; 
+                    if(!acc[uid]) acc[uid] = { id: uid, artifacts: [] };
+                    acc[uid].artifacts.push(curr);
+                    return acc;
+                }, {}));
+                setUsers(groupedUsers);
+            }
+        };
+        fetchAdminData();
     }
-  }, [user]);
-  */
-
+  }, [user, address]);
 
   const handleDiscordLogin = async () => {
     setAuthLoading(true);
@@ -88,6 +123,14 @@ export default function Home() {
     await supabase.auth.signOut();
     setUser(null);
   };
+
+  // --- FILTER LOGIC FOR SNIPPET 2 ---
+  const displayedUsers = users.filter(u => {
+    if (activeTab === 'ready_for_upgrade') {
+        return u.artifacts.some((a: any) => a.status === 'verified');
+    }
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-black text-white font-mono selection:bg-green-500 selection:text-black">
@@ -154,7 +197,7 @@ export default function Home() {
                 </div>
 
                 {/* MAIN CARDS */}
-                <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center">
+                <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center mb-20">
                     
                     {/* LEFT: DISCORD CARD */}
                     <div className="flex-1 w-full">
@@ -199,10 +242,9 @@ export default function Home() {
                         </div>
                     </div>
 
-                    {/* RIGHT: MANUAL UPLOAD - FIXED (ONLY CLICKABLE IF VERIFIED) */}
+                    {/* RIGHT: MANUAL UPLOAD */}
                     <div className="flex-1 w-full">
                         {user ? (
-                            // Agar User Verified hai to ye dikhega (Clickable)
                             <Link href="/upload">
                             <div className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-green-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
                                 <div>
@@ -215,7 +257,6 @@ export default function Home() {
                             </div>
                             </Link>
                         ) : (
-                            // Agar User Verified NAHI hai to ye dikhega (Locked)
                             <div className="border border-gray-800 bg-black/40 p-10 rounded-2xl relative overflow-hidden h-full flex flex-col justify-between opacity-50 cursor-not-allowed">
                                 <div>
                                     <div className="absolute top-0 right-0 p-4 opacity-5"><UploadCloud size={100} /></div>
@@ -227,12 +268,121 @@ export default function Home() {
                             </div>
                         )}
                     </div>
-
                 </div>
+
+                {/* 🔥 ADMIN CONTROL CENTER 🔥 
+                   Ye Section sirf Admin ko dikhega (Added as per your snippets)
+                */}
+                {isAdmin && (
+                  <div className="border-t border-red-900/50 pt-10 mt-10">
+                    <h2 className="text-2xl font-black text-red-600 mb-6 flex items-center gap-2">
+                        <ShieldAlert /> OVERWATCH CONTROLS
+                    </h2>
+
+                    {/* TABS (SNIPPET 2) */}
+                    <div className="flex gap-4 mb-6">
+                        <button onClick={() => setActiveTab('all')} className={`text-sm px-4 py-2 rounded transition ${activeTab === 'all' ? 'bg-gray-800 text-white' : 'text-gray-500'}`}>
+                            All Contributors
+                        </button>
+                        <button onClick={() => setActiveTab('ready_for_upgrade')} className={`text-sm border border-green-500/30 px-4 py-2 rounded transition ${activeTab === 'ready_for_upgrade' ? 'bg-green-500/20 text-green-400' : 'text-gray-500 hover:text-green-400'}`}>
+                            Ready for Upgrade 🎖️
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        
+                        {/* LIST 1: INCOMING ARTIFACTS (SNIPPET 1) */}
+                        <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
+                            <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">INCOMING STREAM</h3>
+                            <div className="max-h-[400px] overflow-y-auto pr-2">
+                                {userArtifacts.length === 0 && <p className="text-gray-600 text-sm">No artifacts found.</p>}
+                                {userArtifacts.map((item) => (
+                                    <div key={item.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
+                                        
+                                        {/* File Info */}
+                                        <div className="flex items-center gap-3 overflow-hidden">
+                                            <div className="text-white min-w-0">
+                                                <p className="font-bold truncate max-w-[150px]">{item.filename}</p>
+                                                <span className={`text-[10px] px-2 py-0.5 rounded ${
+                                                    item.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+                                                }`}>
+                                                    {item.status?.toUpperCase() || 'PENDING'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* ACTIONS */}
+                                        <div className="flex gap-2 shrink-0">
+                                            {/* DELETE BUTTON */}
+                                            <button 
+                                                onClick={async () => {
+                                                    if(confirm("Are you sure? This is permanent.")) {
+                                                        const res = await deleteArtifact(item.id, item.file_path);
+                                                        if(res.success) {
+                                                            setUserArtifacts(prev => prev.filter(a => a.id !== item.id));
+                                                        }
+                                                    }
+                                                }}
+                                                className="p-2 bg-red-900/20 hover:bg-red-900/50 text-red-500 rounded transition"
+                                                title="Permanently Delete"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+
+                                            {/* VERIFY BUTTON */}
+                                            {item.status !== 'verified' && (
+                                                <button 
+                                                    onClick={async () => {
+                                                        const res = await verifyArtifact(item.id);
+                                                        if(res.success) {
+                                                            setUserArtifacts(prev => prev.map(a => a.id === item.id ? {...a, status: 'verified'} : a));
+                                                            // Trigger re-render for users list too if needed
+                                                        }
+                                                    }}
+                                                    className="p-2 bg-green-900/20 hover:bg-green-900/50 text-green-500 rounded transition"
+                                                    title="Verify Contribution"
+                                                >
+                                                    <CheckCircle size={16} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* LIST 2: USERS / CONTRIBUTORS (SNIPPET 2) */}
+                        <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
+                             <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">ACTIVE NODES</h3>
+                             <div className="max-h-[400px] overflow-y-auto pr-2">
+                                {displayedUsers.length === 0 && <p className="text-gray-600 text-sm">No contributors found.</p>}
+                                {displayedUsers.map(u => (
+                                    <div key={u.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
+                                        <div>
+                                            <p className="font-mono text-xs text-gray-400 break-all">{u.id}</p>
+                                            <p className="text-xs text-gray-600 mt-1">{u.artifacts.length} Uploads</p>
+                                        </div>
+                                        
+                                        {activeTab === 'ready_for_upgrade' && (
+                                            <button 
+                                                onClick={() => markUserForUpgrade(u.id)}
+                                                className="bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/50 text-yellow-500 px-3 py-1 text-xs font-bold rounded flex items-center gap-1 transition"
+                                            >
+                                                GRANT ROLE 🔼
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                             </div>
+                        </div>
+
+                    </div>
+                  </div>
+                )}
 
                 {/* FOOTER */}
                 {(user || isConnected) && (
-                <div className="text-center mt-12">
+                <div className="text-center mt-12 pb-10">
                     <Link href={`/u/${user ? user.id : address}`} className="inline-flex items-center gap-2 text-gray-400 hover:text-green-500 transition border-b border-transparent hover:border-green-500 pb-1">
                     View My Public Portfolio &rarr;
                     </Link>
