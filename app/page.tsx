@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi'; 
 import { checkIsAdmin } from "@/utils/admins"; 
-import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2, ShieldAlert, LayoutDashboard, Lock, Trash2, CheckCircle, ArrowUpRight } from "lucide-react"; 
+import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2, ShieldAlert, LayoutDashboard, Lock, Trash2, CheckCircle, ExternalLink } from "lucide-react"; 
 import Link from "next/link";
 
 // --- ADMIN HELPER FUNCTIONS ---
@@ -29,7 +29,7 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false); 
 
-  // --- DASHBOARD DATA ---
+  // --- DASHBOARD DATA (Initial State Safe Rakha Hai) ---
   const [userArtifacts, setUserArtifacts] = useState<any[]>([]); 
   const [users, setUsers] = useState<any[]>([]); 
   const [activeTab, setActiveTab] = useState('all'); 
@@ -37,22 +37,27 @@ export default function Home() {
   // --- 1. AUTH ---
   useEffect(() => {
     const handleAuth = async () => {
-      setAuthLoading(true);
-      const hash = window.location.hash;
-      if (hash && hash.includes("access_token")) {
-        const params = new URLSearchParams(hash.substring(1));
-        const accessToken = params.get("access_token");
-        if (accessToken) {
-          const { data } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: params.get("refresh_token") || "",
-          });
-          if (data.session) setUser(data.session.user);
+      try {
+        setAuthLoading(true);
+        const hash = window.location.hash;
+        if (hash && hash.includes("access_token")) {
+            const params = new URLSearchParams(hash.substring(1));
+            const accessToken = params.get("access_token");
+            if (accessToken) {
+            const { data } = await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: params.get("refresh_token") || "",
+            });
+            if (data.session) setUser(data.session.user);
+            }
         }
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) setUser(session.user);
+      } catch (e) {
+        console.error("Auth Error:", e);
+      } finally {
+        setAuthLoading(false);
       }
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) setUser(session.user);
-      setAuthLoading(false);
     };
     handleAuth();
 
@@ -64,61 +69,63 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- 2. DATA FETCHING & SMART DISPLAY LOGIC ---
+  // --- 2. DATA FETCHING (SAFE MODE) ---
   useEffect(() => {
-    const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
-    const adminStatus = checkIsAdmin(address, discordId);
-    setIsAdmin(adminStatus || false);
+    const checkAdminAndFetch = async () => {
+        try {
+            const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
+            const adminStatus = checkIsAdmin(address, discordId);
+            setIsAdmin(adminStatus || false);
 
-    if (adminStatus) {
-        const fetchAdminData = async () => {
-            const { data: artifactsData } = await supabase.from('archives').select('*').order('created_at', { ascending: false });
-            
-            if (artifactsData) {
-                setUserArtifacts(artifactsData);
-
-                // --- SMART GROUPING & CRASH PREVENTION ---
-                const groupedMap = artifactsData.reduce((acc: any, curr: any) => {
-                    const identity = curr.wallet_address || curr.user_id || 'unknown'; 
-                    
-                    if(!acc[identity]) {
-                        // Safe Avatar Generation
-                        const seed = identity === 'unknown' ? 'random' : identity;
-                        const autoAvatar = `https://api.dicebear.com/9.x/identicon/svg?seed=${seed}`;
-                        
-                        // Safe Name Logic
-                        let displayName = "Contributor";
-                        if(curr.username) displayName = curr.username;
-                        else if(identity.startsWith('0x')) displayName = identity.slice(0,6) + "..." + identity.slice(-4);
-                        else displayName = "User " + identity.slice(0,4);
-
-                        acc[identity] = { 
-                            id: identity,
-                            username: displayName,
-                            avatar: curr.avatar_url || autoAvatar, 
-                            artifacts: [],
-                            isUpgraded: false
-                        };
-                    }
-                    
-                    // Metadata Refinement
-                    if(curr.username) acc[identity].username = curr.username;
-                    if(curr.avatar_url) acc[identity].avatar = curr.avatar_url;
-
-                    acc[identity].artifacts.push(curr);
-                    
-                    if(curr.status === 'verified') {
-                        acc[identity].isUpgraded = true;
-                    }
-                    
-                    return acc;
-                }, {});
+            if (adminStatus) {
+                const { data: artifactsData, error } = await supabase.from('archives').select('*').order('created_at', { ascending: false });
                 
-                setUsers(Object.values(groupedMap));
+                if (error) throw error;
+
+                if (artifactsData) {
+                    setUserArtifacts(artifactsData);
+
+                    // --- SMART GROUPING ---
+                    const groupedMap = artifactsData.reduce((acc: any, curr: any) => {
+                        const identity = curr.wallet_address || curr.user_id || 'unknown'; 
+                        
+                        if(!acc[identity]) {
+                            // Safe Defaults
+                            let displayName = "Contributor";
+                            if(curr.username) displayName = curr.username;
+                            else if(identity.startsWith('0x')) displayName = identity.slice(0,6) + "..." + identity.slice(-4);
+                            else displayName = "User " + identity.slice(0,4);
+
+                            acc[identity] = { 
+                                id: identity,
+                                username: displayName,
+                                avatar: curr.avatar_url || null, 
+                                artifacts: [],
+                                isUpgraded: false
+                            };
+                        }
+                        
+                        if(curr.username) acc[identity].username = curr.username;
+                        if(curr.avatar_url) acc[identity].avatar = curr.avatar_url;
+
+                        acc[identity].artifacts.push(curr);
+                        
+                        if(curr.status === 'verified') {
+                            acc[identity].isUpgraded = true;
+                        }
+                        
+                        return acc;
+                    }, {});
+                    
+                    setUsers(Object.values(groupedMap));
+                }
             }
-        };
-        fetchAdminData();
-    }
+        } catch (err) {
+            console.error("Admin Fetch Error:", err);
+        }
+    };
+
+    checkAdminAndFetch();
   }, [user, address]);
 
   const handleDiscordLogin = async () => {
@@ -131,6 +138,13 @@ export default function Home() {
     if (activeTab === 'ready_for_upgrade') return u.isUpgraded === true;
     return true;
   });
+
+  // Helper for User Name Display
+  const getUserName = () => {
+      if(user?.user_metadata?.full_name) return user.user_metadata.full_name;
+      if(user?.email) return user.email.split('@')[0];
+      return "User";
+  }
 
   return (
     <div className="min-h-screen bg-black text-white font-mono selection:bg-green-500 selection:text-black">
@@ -153,11 +167,10 @@ export default function Home() {
             </Link>
           )}
           
-          {/* SAFE USER DISPLAY (Crash Fixed here using ?.) */}
           {user && (
             <div className="hidden md:flex items-center gap-2 text-xs text-green-400 border border-green-900 px-3 py-1 rounded-full bg-green-900/10">
                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-               {user?.user_metadata?.full_name?.split(" ")[0] || "User"}
+               {getUserName().split(" ")[0]}
             </div>
           )}
           <div className="shadow-[0_0_15px_rgba(34,197,94,0.3)] rounded-xl">
@@ -188,14 +201,14 @@ export default function Home() {
                 
                 <p className="text-gray-400 text-xl max-w-2xl mx-auto">
                     {user 
-                    ? `Welcome back, ${user?.user_metadata?.full_name || 'User'}.` 
+                    ? `Welcome back, ${getUserName()}.` 
                     : isConnected 
                         ? "Wallet Connected. You may verify with Discord for full access."
                         : "The decentralized vault for Seismic Community artifacts."}
                 </p>
                 </div>
 
-                {/* USER CARDS */}
+                {/* USER ACTION CARDS */}
                 <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center mb-20">
                     <div className="flex-1 w-full">
                         {!user ? (
@@ -215,7 +228,7 @@ export default function Home() {
                             <div className="flex items-center gap-4 mb-6">
                                 <img src={user?.user_metadata?.avatar_url} className="w-20 h-20 rounded-full border-4 border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.5)]" />
                                 <div>
-                                <h3 className="text-3xl font-bold text-white">{user?.user_metadata?.full_name}</h3>
+                                <h3 className="text-3xl font-bold text-white">{getUserName()}</h3>
                                 <p className="text-green-400 text-sm font-mono tracking-wider">VERIFIED</p>
                                 </div>
                             </div>
@@ -279,7 +292,6 @@ export default function Home() {
                                     <div key={item.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className="text-white min-w-0">
-                                                {/* SAFE FALLBACK FOR FILENAME */}
                                                 <p className="font-bold truncate max-w-[150px]">
                                                     {item.filename || item.name || `Artifact ${item.id.slice(0,4)}`}
                                                 </p>
@@ -304,7 +316,7 @@ export default function Home() {
                                             </button>
 
                                             <Link href={`/u/${item.user_id || item.wallet_address || '#'}`} className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded">
-                                                <ArrowUpRight size={16} />
+                                                <ExternalLink size={16} />
                                             </Link>
                                         </div>
                                     </div>
@@ -322,11 +334,16 @@ export default function Home() {
                                 {displayedUsers.map(u => (
                                     <div key={u.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
                                         <div className="flex items-center gap-3">
-                                            {/* SAFE AVATAR RENDER */}
-                                            <img src={u.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover bg-black" />
+                                            {/* Safe Avatar */}
+                                            {u.avatar ? (
+                                                <img src={u.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover bg-black" />
+                                            ) : (
+                                                <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-xs font-bold text-gray-500">
+                                                    {u.username.substring(0,2).toUpperCase()}
+                                                </div>
+                                            )}
                                             
                                             <div>
-                                                {/* SAFE USERNAME RENDER */}
                                                 <p className={`font-mono text-xs mb-1 ${u.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
                                                     {u.isUpgraded ? '★ UPGRADED' : u.username}
                                                 </p>
