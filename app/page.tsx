@@ -38,14 +38,14 @@ export default function Home() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isMounted, setIsMounted] = useState(false); // 🔥 HYDRATION FIX
+  const [isMounted, setIsMounted] = useState(false); 
 
   // --- DASHBOARD DATA ---
   const [userArtifacts, setUserArtifacts] = useState<any[]>([]); 
   const [users, setUsers] = useState<any[]>([]); 
   const [activeTab, setActiveTab] = useState('all'); 
 
-  // --- 1. MOUNT CHECK (PREVENTS CRASHES) ---
+  // --- 1. MOUNT CHECK ---
   useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -85,9 +85,7 @@ export default function Home() {
   // --- 3. ADMIN DATA FETCHING ---
   useEffect(() => {
     const runAdminLogic = async () => {
-        // Safe check for admin
         const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
-        // Ensure checkIsAdmin handles undefined safely
         const adminStatus = address || discordId ? checkIsAdmin(address, discordId) : false;
         
         setIsAdmin(!!adminStatus);
@@ -100,21 +98,22 @@ export default function Home() {
                 if (artifactsData) {
                     setUserArtifacts(artifactsData);
 
-                    // --- GROUPING LOGIC ---
+                    // --- GROUPING LOGIC (SAFE STRING CASTING) ---
                     const groupedMap = artifactsData.reduce((acc: any, curr: any) => {
                         const identity = curr.wallet_address || curr.user_id || 'unknown'; 
-                        
-                        if(!acc[identity]) {
-                            const seed = identity === 'unknown' ? 'default' : identity;
+                        const safeIdentity = String(identity); // Force String
+
+                        if(!acc[safeIdentity]) {
+                            const seed = safeIdentity === 'unknown' ? 'default' : safeIdentity;
                             const autoAvatar = `https://api.dicebear.com/9.x/identicon/svg?seed=${seed}`;
                             
                             let displayName = "Contributor";
                             if(curr.username) displayName = curr.username;
-                            else if(identity.startsWith('0x')) displayName = identity.slice(0,6) + "..." + identity.slice(-4);
-                            else displayName = "User " + identity.slice(0,4);
+                            else if(safeIdentity.startsWith('0x')) displayName = safeIdentity.slice(0,6) + "..." + safeIdentity.slice(-4);
+                            else displayName = "User " + safeIdentity.slice(0,4);
 
-                            acc[identity] = { 
-                                id: identity,
+                            acc[safeIdentity] = { 
+                                id: safeIdentity,
                                 username: displayName,
                                 avatar: curr.avatar_url || autoAvatar, 
                                 artifacts: [],
@@ -122,11 +121,11 @@ export default function Home() {
                             };
                         }
                         
-                        if(curr.username) acc[identity].username = curr.username;
-                        if(curr.avatar_url) acc[identity].avatar = curr.avatar_url;
+                        if(curr.username) acc[safeIdentity].username = curr.username;
+                        if(curr.avatar_url) acc[safeIdentity].avatar = curr.avatar_url;
 
-                        acc[identity].artifacts.push(curr);
-                        if(curr.status === 'verified') acc[identity].isUpgraded = true;
+                        acc[safeIdentity].artifacts.push(curr);
+                        if(curr.status === 'verified') acc[safeIdentity].isUpgraded = true;
                         
                         return acc;
                     }, {});
@@ -157,7 +156,6 @@ export default function Home() {
     return true;
   });
 
-  // 🔥 PREVENT HYDRATION ERROR: Don't render until mounted
   if (!isMounted) return null;
 
   return (
@@ -174,7 +172,6 @@ export default function Home() {
         
         <div className="flex gap-4 items-center">
           {isAdmin && (
-            // Safe Button (No Link)
             <button
                 onClick={() => router.push('/admin')}
                 className="hidden md:flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.6)] animate-pulse transition"
@@ -273,7 +270,7 @@ export default function Home() {
                     </div>
                 </div>
 
-                {/* 🔥 ADMIN CONTROL CENTER (SAFE MODE) 🔥 */}
+                {/* 🔥 ADMIN OVERWATCH CONTROLS (CRASH FIXED) 🔥 */}
                 {isAdmin && (
                   <div className="border-t border-red-900/50 pt-10 mt-10">
                     <h2 className="text-2xl font-black text-red-600 mb-6 flex items-center gap-2">
@@ -300,8 +297,9 @@ export default function Home() {
                                     <div key={item?.id || idx} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className="text-white min-w-0">
+                                                {/* 🔥 MAGIC FIX HERE: String() lagaya hai taaki agar ID number ho to crash na ho */}
                                                 <p className="font-bold truncate max-w-[150px]">
-                                                    {item?.filename || item?.name || `Artifact ${item?.id?.slice(0,4)}`}
+                                                    {item?.filename || item?.name || `Artifact ${String(item?.id).slice(0,4)}`}
                                                 </p>
                                                 <div className="flex items-center gap-2 mt-1">
                                                     <span className={`text-[10px] px-2 py-0.5 rounded ${item?.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
@@ -349,7 +347,8 @@ export default function Home() {
                                                 <p className={`font-mono text-xs mb-1 ${u?.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
                                                     {u?.isUpgraded ? '★ UPGRADED' : u?.username}
                                                 </p>
-                                                <p className="font-bold text-xs text-gray-400 break-all truncate max-w-[120px]">{u?.id}</p>
+                                                {/* 🔥 MAGIC FIX HERE TOO */}
+                                                <p className="font-bold text-xs text-gray-400 break-all truncate max-w-[120px]">{String(u?.id)}</p>
                                             </div>
                                         </div>
                                         
