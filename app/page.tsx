@@ -98,29 +98,36 @@ export default function Home() {
                 if (artifactsData) {
                     setUserArtifacts(artifactsData);
 
-                    // --- GROUPING LOGIC (SAFE STRING CASTING) ---
+                    // --- GROUPING LOGIC (UPDATED FOR CORRECT NAMING) ---
                     const groupedMap = artifactsData.reduce((acc: any, curr: any) => {
+                        // Use wallet or user_id as unique key
                         const identity = curr.wallet_address || curr.user_id || 'unknown'; 
-                        const safeIdentity = String(identity); // Force String
+                        const safeIdentity = String(identity); 
 
                         if(!acc[safeIdentity]) {
                             const seed = safeIdentity === 'unknown' ? 'default' : safeIdentity;
                             const autoAvatar = `https://api.dicebear.com/9.x/identicon/svg?seed=${seed}`;
                             
-                            let displayName = "Contributor";
-                            if(curr.username) displayName = curr.username;
-                            else if(safeIdentity.startsWith('0x')) displayName = safeIdentity.slice(0,6) + "..." + safeIdentity.slice(-4);
-                            else displayName = "User " + safeIdentity.slice(0,4);
+                            // LOGIC: Prefer Username (Discord) -> Then Wallet -> Then 'User'
+                            let displayName = "Unknown User";
+                            if (curr.username) {
+                                displayName = curr.username;
+                            } else if (curr.wallet_address) {
+                                displayName = curr.wallet_address.slice(0,6) + "..." + curr.wallet_address.slice(-4);
+                            } else {
+                                displayName = "User " + safeIdentity.slice(0,4);
+                            }
 
                             acc[safeIdentity] = { 
                                 id: safeIdentity,
-                                username: displayName,
+                                username: displayName, // Isme ab sahi naam jayega
                                 avatar: curr.avatar_url || autoAvatar, 
                                 artifacts: [],
                                 isUpgraded: false
                             };
                         }
                         
+                        // Agar naye item me better info hai to update karo
                         if(curr.username) acc[safeIdentity].username = curr.username;
                         if(curr.avatar_url) acc[safeIdentity].avatar = curr.avatar_url;
 
@@ -270,7 +277,7 @@ export default function Home() {
                     </div>
                 </div>
 
-                {/* 🔥 ADMIN OVERWATCH CONTROLS (CRASH FIXED) 🔥 */}
+                {/* 🔥 ADMIN OVERWATCH CONTROLS (FIXED) 🔥 */}
                 {isAdmin && (
                   <div className="border-t border-red-900/50 pt-10 mt-10">
                     <h2 className="text-2xl font-black text-red-600 mb-6 flex items-center gap-2">
@@ -289,17 +296,30 @@ export default function Home() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         
-                        {/* LIST 1: INCOMING STREAM */}
+                        {/* LIST 1: INCOMING STREAM (NOW SHOWS USER) */}
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                             <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">INCOMING STREAM</h3>
                             <div className="max-h-[400px] overflow-y-auto pr-2 space-y-2">
-                                {userArtifacts.map((item, idx) => (
+                                {userArtifacts.map((item, idx) => {
+                                    // LOGIC: Determine Display Name & Image per item
+                                    const uploaderName = item.username 
+                                        ? item.username 
+                                        : (item.wallet_address ? `${item.wallet_address.slice(0,6)}...${item.wallet_address.slice(-4)}` : "Unknown");
+                                    
+                                    const uploaderImg = item.avatar_url 
+                                        ? item.avatar_url 
+                                        : `https://api.dicebear.com/9.x/identicon/svg?seed=${item.wallet_address || 'default'}`;
+
+                                    return (
                                     <div key={item?.id || idx} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
                                         <div className="flex items-center gap-3 overflow-hidden">
+                                            {/* USER IMAGE */}
+                                            <img src={uploaderImg} alt="usr" className="w-8 h-8 rounded-full border border-gray-700 bg-black" />
+                                            
                                             <div className="text-white min-w-0">
-                                                {/* 🔥 MAGIC FIX HERE: String() lagaya hai taaki agar ID number ho to crash na ho */}
-                                                <p className="font-bold truncate max-w-[150px]">
-                                                    {item?.filename || item?.name || `Artifact ${String(item?.id).slice(0,4)}`}
+                                                {/* USER NAME */}
+                                                <p className="font-bold truncate max-w-[150px] text-sm text-gray-200">
+                                                    {uploaderName}
                                                 </p>
                                                 <div className="flex items-center gap-2 mt-1">
                                                     <span className={`text-[10px] px-2 py-0.5 rounded ${item?.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
@@ -328,12 +348,13 @@ export default function Home() {
                                             </button>
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                                 {userArtifacts.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No artifacts.</p>}
                             </div>
                         </div>
 
-                        {/* LIST 2: ACTIVE NODES */}
+                        {/* LIST 2: ACTIVE NODES (FIXED NAMES) */}
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                              <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">
                                 {activeTab === 'ready_for_upgrade' ? 'UPGRADED NODES (VERIFIED)' : 'ACTIVE NODES'}
@@ -344,11 +365,13 @@ export default function Home() {
                                         <div className="flex items-center gap-3">
                                             <img src={u?.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover bg-black" alt="avatar" />
                                             <div>
-                                                <p className={`font-mono text-xs mb-1 ${u?.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
+                                                <p className={`font-mono text-xs mb-1 ${u?.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-300 font-bold'}`}>
                                                     {u?.isUpgraded ? '★ UPGRADED' : u?.username}
                                                 </p>
-                                                {/* 🔥 MAGIC FIX HERE TOO */}
-                                                <p className="font-bold text-xs text-gray-400 break-all truncate max-w-[120px]">{String(u?.id)}</p>
+                                                {/* Displays wallet or ID as subtext instead of "Discord-User" */}
+                                                <p className="text-[10px] text-gray-500 break-all truncate max-w-[120px]">
+                                                    {u?.id.startsWith('0x') ? u.id.slice(0,8)+'...' : 'ID: ' + u.id.slice(0,6)}
+                                                </p>
                                             </div>
                                         </div>
                                         
