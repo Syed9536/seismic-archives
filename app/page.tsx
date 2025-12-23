@@ -6,9 +6,9 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi'; 
 import { checkIsAdmin } from "@/utils/admins"; 
 import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2, ShieldAlert, LayoutDashboard, Lock, Trash2, CheckCircle, ExternalLink, ArrowUpRight } from "lucide-react"; 
-import { useRouter } from "next/navigation"; // Router use karenge Link ki jagah
+import { useRouter } from "next/navigation"; 
 
-// --- ADMIN HELPER FUNCTIONS ---
+// --- ADMIN HELPER: DELETE ---
 const deleteArtifact = async (artifactId: string, filePath: string) => {
   if(!confirm("⚠️ Delete this item permanently?")) return { success: false };
   try {
@@ -20,34 +20,37 @@ const deleteArtifact = async (artifactId: string, filePath: string) => {
     return { success: true };
   } catch (error) {
     console.error("Delete failed:", error);
-    alert("Delete failed.");
     return { success: false };
   }
 };
 
-// Safe Date Helper
-const formatDate = (dateString: string) => {
+// --- SAFE DATE HELPER ---
+const formatDate = (dateStr: string) => {
     try {
-        if(!dateString) return "N/A";
-        return new Date(dateString).toLocaleDateString();
-    } catch (e) {
-        return "Invalid Date";
-    }
+        if(!dateStr) return "N/A";
+        return new Date(dateStr).toLocaleDateString();
+    } catch(e) { return "N/A"; }
 };
 
 export default function Home() {
   const { address, isConnected } = useAccount(); 
-  const router = useRouter(); // Navigation Handler
+  const router = useRouter(); 
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false); 
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isMounted, setIsMounted] = useState(false); // 🔥 HYDRATION FIX
 
   // --- DASHBOARD DATA ---
   const [userArtifacts, setUserArtifacts] = useState<any[]>([]); 
   const [users, setUsers] = useState<any[]>([]); 
   const [activeTab, setActiveTab] = useState('all'); 
 
-  // --- 1. AUTH ---
+  // --- 1. MOUNT CHECK (PREVENTS CRASHES) ---
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // --- 2. AUTH ---
   useEffect(() => {
     const handleAuth = async () => {
       setAuthLoading(true);
@@ -79,27 +82,29 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- 2. ADMIN DATA FETCHING ---
+  // --- 3. ADMIN DATA FETCHING ---
   useEffect(() => {
     const runAdminLogic = async () => {
-        try {
-            const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
-            const adminStatus = checkIsAdmin(address, discordId);
-            setIsAdmin(adminStatus || false);
+        // Safe check for admin
+        const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
+        // Ensure checkIsAdmin handles undefined safely
+        const adminStatus = address || discordId ? checkIsAdmin(address, discordId) : false;
+        
+        setIsAdmin(!!adminStatus);
 
-            if (adminStatus) {
+        if (adminStatus) {
+            try {
                 const { data: artifactsData, error } = await supabase.from('archives').select('*').order('created_at', { ascending: false });
                 
                 if (error) throw error;
                 if (artifactsData) {
                     setUserArtifacts(artifactsData);
 
-                    // --- SMART GROUPING ---
+                    // --- GROUPING LOGIC ---
                     const groupedMap = artifactsData.reduce((acc: any, curr: any) => {
                         const identity = curr.wallet_address || curr.user_id || 'unknown'; 
                         
                         if(!acc[identity]) {
-                            // Safe Avatar & Name Logic
                             const seed = identity === 'unknown' ? 'default' : identity;
                             const autoAvatar = `https://api.dicebear.com/9.x/identicon/svg?seed=${seed}`;
                             
@@ -128,13 +133,13 @@ export default function Home() {
                     
                     setUsers(Object.values(groupedMap));
                 }
+            } catch (err) {
+                console.error("Admin Fetch Error:", err);
             }
-        } catch (err) {
-            console.error("Fetch Error:", err);
         }
     };
-    runAdminLogic();
-  }, [user, address]);
+    if (isMounted) runAdminLogic();
+  }, [user, address, isMounted]);
 
   const handleDiscordLogin = async () => {
     setAuthLoading(true);
@@ -142,16 +147,18 @@ export default function Home() {
   };
   const handleLogout = async () => { await supabase.auth.signOut(); setUser(null); };
 
-  // Helper to get name
   const getUserName = () => {
       return user?.user_metadata?.full_name || user?.email?.split('@')[0] || "User";
   }
 
-  // Filtered Users
+  // Filter Users
   const displayedUsers = users.filter(u => {
     if (activeTab === 'ready_for_upgrade') return u.isUpgraded === true;
     return true;
   });
+
+  // 🔥 PREVENT HYDRATION ERROR: Don't render until mounted
+  if (!isMounted) return null;
 
   return (
     <div className="min-h-screen bg-black text-white font-mono selection:bg-green-500 selection:text-black">
@@ -167,8 +174,8 @@ export default function Home() {
         
         <div className="flex gap-4 items-center">
           {isAdmin && (
-            // Safe Navigation Button (No Link tag to prevent nesting errors)
-            <button 
+            // Safe Button (No Link)
+            <button
                 onClick={() => router.push('/admin')}
                 className="hidden md:flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.6)] animate-pulse transition"
             >
@@ -219,7 +226,6 @@ export default function Home() {
 
                 {/* MAIN CARDS */}
                 <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center mb-20">
-                    {/* Discord Card */}
                     <div className="flex-1 w-full">
                         {!user ? (
                         <div onClick={handleDiscordLogin} className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-indigo-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
@@ -247,10 +253,9 @@ export default function Home() {
                         </div>
                         )}
                     </div>
-                    {/* Manual Upload Card */}
                     <div className="flex-1 w-full">
                         <div 
-                            onClick={() => { if(user) router.push('/upload'); }} // Safe Navigation
+                            onClick={() => { if(user) router.push('/upload'); }} 
                             className={`group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl transition-all relative overflow-hidden h-full flex flex-col justify-between ${user ? 'cursor-pointer hover:border-green-500/50' : 'opacity-50 cursor-not-allowed'}`}
                         >
                             <div>
@@ -291,20 +296,18 @@ export default function Home() {
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                             <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">INCOMING STREAM</h3>
                             <div className="max-h-[400px] overflow-y-auto pr-2 space-y-2">
-                                {userArtifacts.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No artifacts found.</p>}
-                                {userArtifacts.map((item) => (
-                                    item && ( // Safe Check
-                                    <div key={item.id || Math.random()} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
+                                {userArtifacts.map((item, idx) => (
+                                    <div key={item?.id || idx} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className="text-white min-w-0">
                                                 <p className="font-bold truncate max-w-[150px]">
-                                                    {item.filename || item.name || `Artifact ${item.id.slice(0,4)}`}
+                                                    {item?.filename || item?.name || `Artifact ${item?.id?.slice(0,4)}`}
                                                 </p>
                                                 <div className="flex items-center gap-2 mt-1">
-                                                    <span className={`text-[10px] px-2 py-0.5 rounded ${item.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
-                                                        {item.status?.toUpperCase() || 'PENDING'}
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded ${item?.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                                                        {item?.status?.toUpperCase() || 'PENDING'}
                                                     </span>
-                                                    <span className="text-[10px] text-gray-600">{formatDate(item.created_at)}</span>
+                                                    <span className="text-[10px] text-gray-600">{formatDate(item?.created_at)}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -312,9 +315,7 @@ export default function Home() {
                                             <button 
                                                 onClick={async () => {
                                                     const res = await deleteArtifact(item.id, item.file_path);
-                                                    if(res?.success) {
-                                                        setUserArtifacts(prev => prev.filter(a => a.id !== item.id));
-                                                    }
+                                                    if(res?.success) setUserArtifacts(prev => prev.filter(a => a.id !== item.id));
                                                 }}
                                                 className="p-2 bg-red-900/20 hover:bg-red-900/50 text-red-500 rounded transition"
                                             >
@@ -329,8 +330,8 @@ export default function Home() {
                                             </button>
                                         </div>
                                     </div>
-                                    )
                                 ))}
+                                {userArtifacts.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No artifacts.</p>}
                             </div>
                         </div>
 
@@ -340,29 +341,27 @@ export default function Home() {
                                 {activeTab === 'ready_for_upgrade' ? 'UPGRADED NODES (VERIFIED)' : 'ACTIVE NODES'}
                              </h3>
                              <div className="max-h-[400px] overflow-y-auto pr-2 space-y-2">
-                                {displayedUsers.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No contributors found.</p>}
-                                {displayedUsers.map(u => (
-                                    u && ( // Safe Check
-                                    <div key={u.id || Math.random()} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
+                                {displayedUsers.map((u, idx) => (
+                                    <div key={u?.id || idx} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
                                         <div className="flex items-center gap-3">
-                                            <img src={u.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover bg-black" alt="avatar" />
+                                            <img src={u?.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover bg-black" alt="avatar" />
                                             <div>
-                                                <p className={`font-mono text-xs mb-1 ${u.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
-                                                    {u.isUpgraded ? '★ UPGRADED' : u.username}
+                                                <p className={`font-mono text-xs mb-1 ${u?.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
+                                                    {u?.isUpgraded ? '★ UPGRADED' : u?.username}
                                                 </p>
-                                                <p className="font-bold text-xs text-gray-400 break-all truncate max-w-[120px]">{u.id}</p>
+                                                <p className="font-bold text-xs text-gray-400 break-all truncate max-w-[120px]">{u?.id}</p>
                                             </div>
                                         </div>
                                         
                                         <button 
                                             onClick={() => router.push(`/u/${u.id}`)}
-                                            className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 transition ${u.isUpgraded ? 'bg-yellow-500 text-black hover:bg-yellow-400' : 'bg-gray-800 text-white hover:bg-gray-700'}`}
+                                            className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 transition ${u?.isUpgraded ? 'bg-yellow-500 text-black hover:bg-yellow-400' : 'bg-gray-800 text-white hover:bg-gray-700'}`}
                                         >
                                             INSPECT 🔍
                                         </button>
                                     </div>
-                                    )
                                 ))}
+                                {displayedUsers.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No contributors found.</p>}
                              </div>
                         </div>
 
