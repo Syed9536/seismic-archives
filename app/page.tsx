@@ -10,7 +10,9 @@ import Link from "next/link";
 
 // --- ADMIN HELPER FUNCTIONS ---
 const deleteArtifact = async (artifactId: string, filePath: string) => {
-  if(!confirm("⚠️ Delete this item permanently?")) return;
+  // FIX: Return object explicitly on cancel
+  if(!confirm("⚠️ Delete this item permanently?")) return { success: false };
+  
   try {
     if (filePath) {
         await supabase.storage.from('artifacts').remove([filePath]);
@@ -70,7 +72,6 @@ export default function Home() {
 
   // --- 2. ADMIN DATA FETCHING ---
   useEffect(() => {
-    // Wrap in async function to avoid useEffect async issues
     const runAdminLogic = async () => {
         const discordId = user?.user_metadata?.provider_id || user?.identities?.find((id: any) => id.provider === 'discord')?.id;
         const adminStatus = checkIsAdmin(address, discordId);
@@ -89,7 +90,6 @@ export default function Home() {
                         const identity = curr.wallet_address || curr.user_id || 'unknown'; 
                         
                         if(!acc[identity]) {
-                            // Safe Avatar & Name
                             const seed = identity === 'unknown' ? 'default' : identity;
                             const autoAvatar = `https://api.dicebear.com/9.x/identicon/svg?seed=${seed}`;
                             
@@ -107,7 +107,6 @@ export default function Home() {
                             };
                         }
                         
-                        // Metadata Refinement from newer rows
                         if(curr.username) acc[identity].username = curr.username;
                         if(curr.avatar_url) acc[identity].avatar = curr.avatar_url;
 
@@ -138,7 +137,6 @@ export default function Home() {
     return true;
   });
 
-  // Safe User Display Name
   const getUserName = () => {
       return user?.user_metadata?.full_name || user?.email?.split('@')[0] || "User";
   }
@@ -158,7 +156,6 @@ export default function Home() {
         <div className="flex gap-4 items-center">
           {isAdmin && (
             <Link href="/admin">
-                {/* Fixed: Button removed, styles applied to div/button replacement or directly */}
                 <div className="hidden md:flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.6)] animate-pulse transition cursor-pointer">
                     <LayoutDashboard size={14} /> ADMIN PANEL
                 </div>
@@ -262,7 +259,7 @@ export default function Home() {
                     </div>
                 </div>
 
-                {/* 🔥 ADMIN CONTROL CENTER (HTML FIXED) 🔥 */}
+                {/* 🔥 ADMIN CONTROL CENTER 🔥 */}
                 {isAdmin && (
                   <div className="border-t border-red-900/50 pt-10 mt-10">
                     <h2 className="text-2xl font-black text-red-600 mb-6 flex items-center gap-2">
@@ -304,7 +301,7 @@ export default function Home() {
                                             <button 
                                                 onClick={async () => {
                                                     const res = await deleteArtifact(item.id, item.file_path);
-                                                    if(res.success) {
+                                                    if(res?.success) { // FIX: Optional chaining
                                                         setUserArtifacts(prev => prev.filter(a => a.id !== item.id));
                                                     }
                                                 }}
@@ -313,7 +310,6 @@ export default function Home() {
                                                 <Trash2 size={16} />
                                             </button>
 
-                                            {/* HTML FIX: Use div instead of button inside Link */}
                                             <Link href={`/u/${item.user_id || item.wallet_address || '#'}`}>
                                                 <div className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded cursor-pointer">
                                                     <ExternalLink size={16} />
@@ -335,7 +331,6 @@ export default function Home() {
                                 {displayedUsers.map(u => (
                                     <div key={u.id} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
                                         <div className="flex items-center gap-3">
-                                            {/* Avatar */}
                                             <img src={u.avatar} className="w-8 h-8 rounded-full border border-gray-700 object-cover bg-black" alt="avatar" />
                                             
                                             <div>
@@ -346,7 +341,6 @@ export default function Home() {
                                             </div>
                                         </div>
                                         
-                                        {/* HTML FIX: Link wraps a div, NOT a button */}
                                         <Link href={`/u/${u.id}`}>
                                             <div className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 transition cursor-pointer ${u.isUpgraded ? 'bg-yellow-500 text-black hover:bg-yellow-400' : 'bg-gray-800 text-white hover:bg-gray-700'}`}>
                                                 INSPECT 🔍
