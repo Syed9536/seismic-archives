@@ -45,11 +45,12 @@ export default function UserProfile() {
 
         // --- FETCH ARTIFACTS ---
         const id = params.id as string;
-        // NOTE: Table name 'artifacts' use kar raha hun SQL fix ke hisab se
-        let query = supabase.from("artifacts").select("*").order("created_at", { ascending: false });
+        // NOTE: Table name 'archives' use kar raha hun taaki tera error solve ho jaye
+        let query = supabase.from("archives").select("*").order("created_at", { ascending: false });
 
         if (id.startsWith("0x")) {
-            query = query.eq("wallet_address", id); // Make sure DB has wallet_address column if using this
+            // Agar tere DB me 'wallet_address' column hai to ye chalega
+            query = query.eq("wallet_address", id); 
         } else {
             query = query.eq("user_id", id);
         }
@@ -91,12 +92,13 @@ export default function UserProfile() {
   const deleteItem = async (artifactId: string, filePath: string) => {
     if(!confirm("⚠️ ADMIN: Delete this permanently?")) return;
     
-    // 1. Storage se udao
+    // 1. Storage se udao (Agar file path available hai)
     if(filePath) {
+        // Bucket name check kar lena (archives vs artifacts)
         await supabase.storage.from('artifacts').remove([filePath]);
     }
     // 2. Table se udao
-    const { error } = await supabase.from('artifacts').delete().eq('id', artifactId);
+    const { error } = await supabase.from('archives').delete().eq('id', artifactId);
     
     if (!error) {
         // UI se hatao bina refresh kiye
@@ -111,7 +113,7 @@ export default function UserProfile() {
     if(!confirm("Mark this user/node for ROLE UPGRADE? \n(This will verify all their uploads)")) return;
 
     const id = params.id as string;
-    let updateQuery = supabase.from('artifacts').update({ status: 'verified' });
+    let updateQuery = supabase.from('archives').update({ status: 'verified' });
 
     // User ID ya Wallet ke hisab se update karo
     if (id.startsWith("0x")) {
@@ -191,7 +193,8 @@ export default function UserProfile() {
       
       <main className="max-w-6xl mx-auto p-8 mt-4">
         
-        <div className="mb-8 text-center md:text-left flex flex-col md:flex-row justify-between items-end">
+        {/* 🔥 HEADER WITH UPGRADE BUTTON 🔥 */}
+        <div className="mb-8 text-center md:text-left flex flex-col md:flex-row justify-between items-end border-b border-gray-800 pb-6">
             <div>
                 <h1 className="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-500">
                 SEISMIC LEDGER
@@ -212,16 +215,21 @@ export default function UserProfile() {
                             <ShieldAlert size={12} /> ADMIN OVERRIDE
                         </span>
                     )}
+                    {isOwner && (
+                        <span className="text-xs font-bold text-black bg-green-500 px-3 py-1 rounded flex items-center gap-1">
+                            <Eye size={12} /> OWNER ACCESS
+                        </span>
+                    )}
                 </div>
             </div>
 
-            {/* 🔥 ADMIN UPGRADE BUTTON 🔥 */}
+            {/* UPGRADE BUTTON (Sirf Admin ko dikhega) */}
             {isAdmin && (
                 <button 
                   onClick={verifyUserForUpgrade}
-                  className="mt-4 md:mt-0 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/50 px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition hover:shadow-[0_0_15px_rgba(234,179,8,0.3)]"
+                  className="mt-4 md:mt-0 bg-yellow-500 text-black border border-yellow-500/50 px-6 py-3 rounded-lg text-sm font-bold flex items-center gap-2 transition hover:bg-yellow-400 shadow-[0_0_20px_rgba(234,179,8,0.4)]"
                 >
-                  <ArrowUpRight size={16}/> MARK NODE FOR UPGRADE
+                  <ArrowUpRight size={20}/> MARK NODE FOR UPGRADE
                 </button>
             )}
         </div>
@@ -244,19 +252,20 @@ export default function UserProfile() {
                         // UNLOCKED CARD
                         <div key={item.id} className={`break-inside-avoid bg-black border overflow-hidden relative group transition-all duration-300 ${item.is_encrypted ? "border-indigo-500/50" : "border-green-900/30 hover:border-green-500"}`}>
                              
-                             {/* 🔥 ADMIN DELETE BUTTON (OVERLAY) 🔥 */}
+                             {/* 🔥 ADMIN DELETE BUTTON (Always Visible for Admin) 🔥 */}
                              {isAdmin && (
                                 <button 
                                     onClick={() => deleteItem(item.id, item.file_path)}
-                                    className="absolute top-2 left-2 z-20 bg-red-600 text-white p-2 rounded-full hover:bg-red-500 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                    className="absolute top-3 left-3 z-50 bg-red-600 text-white p-2 rounded-full hover:bg-red-500 shadow-[0_0_10px_rgba(220,38,38,0.8)] border border-white/20"
                                     title="Permanently Delete Artifact"
                                 >
-                                    <Trash2 size={14} />
+                                    <Trash2 size={16} />
                                 </button>
                              )}
 
                              {/* IMAGE */}
                              <div className="relative">
+                                {/* Safe Image Load */}
                                 <img src={item.image_url} className="w-full h-auto object-cover" />
                                 
                                 {/* DECRYPTED BADGE */}
@@ -266,7 +275,7 @@ export default function UserProfile() {
                                     </div>
                                 )}
                                 
-                                {/* VERIFIED BADGE (Agar Admin ne verify kar diya hai) */}
+                                {/* VERIFIED BADGE */}
                                 {item.status === 'verified' && (
                                     <div className="absolute bottom-2 right-2 bg-green-500 text-black text-[10px] px-2 py-1 flex items-center gap-1 font-bold shadow-lg rounded-full">
                                         <CheckCircle size={10} /> VERIFIED
