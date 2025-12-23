@@ -5,23 +5,34 @@ import { useState, useEffect } from "react";
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi'; 
 import { checkIsAdmin } from "@/utils/admins"; 
-import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2, ShieldAlert, LayoutDashboard, Lock, Trash2, CheckCircle, ArrowUpRight } from "lucide-react";
+import { Ghost, UploadCloud, ShieldCheck, Disc, LogOut, User, Loader2, ShieldAlert, LayoutDashboard, Lock, Trash2, CheckCircle, ArrowUpRight } from "lucide-react"; 
 import Link from "next/link";
 
 // --- ADMIN HELPER FUNCTIONS ---
 const deleteArtifact = async (artifactId: string, filePath: string) => {
-  if(!confirm("⚠️ ADMIN: Delete this permanently?")) return { success: false };
   try {
+    // 1. Storage Delete
     if (filePath) {
         await supabase.storage.from('artifacts').remove([filePath]);
     }
-    const { error } = await supabase.from('archives').delete().eq('id', artifactId);
-    if (error) throw error;
+    // 2. DB Delete (Table 'archives' kar diya hai taaki error na aaye)
+    const { error: dbError } = await supabase.from('archives').delete().eq('id', artifactId);
+    if (dbError) throw dbError;
     return { success: true };
   } catch (error) {
     console.error("Delete failed:", error);
     return { success: false, error };
   }
+};
+
+const verifyArtifact = async (artifactId: string) => {
+  // Table 'archives' fix
+  const { error } = await supabase.from('archives').update({ status: 'verified' }).eq('id', artifactId);
+  return { success: !error };
+};
+
+const markUserForUpgrade = async (userId: string) => {
+   console.log("Marking user for upgrade:", userId);
 };
 
 export default function Home() {
@@ -30,31 +41,39 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false); 
 
-  // --- ADMIN DASHBOARD STATE ---
+  // --- NEW STATE FOR ADMIN DASHBOARD ---
   const [userArtifacts, setUserArtifacts] = useState<any[]>([]); 
   const [users, setUsers] = useState<any[]>([]); 
-  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'ready_for_upgrade'
+  const [activeTab, setActiveTab] = useState('all'); 
 
   // --- 1. AUTH HANDLING ---
   useEffect(() => {
     const handleAuth = async () => {
       setAuthLoading(true);
+
       const hash = window.location.hash;
       if (hash && hash.includes("access_token")) {
         const params = new URLSearchParams(hash.substring(1));
         const accessToken = params.get("access_token");
+        const refreshToken = params.get("refresh_token");
+
         if (accessToken) {
           const { data } = await supabase.auth.setSession({
             access_token: accessToken,
-            refresh_token: params.get("refresh_token") || "",
+            refresh_token: refreshToken || "",
           });
-          if (data.session) setUser(data.session.user);
+          if (data.session) {
+             setUser(data.session.user);
+          }
         }
       }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (session) setUser(session.user);
+      
       setAuthLoading(false);
     };
+
     handleAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -62,6 +81,7 @@ export default function Home() {
       if (event === 'SIGNED_OUT') setUser(null);
       setAuthLoading(false);
     });
+
     return () => subscription.unsubscribe();
   }, []);
 
@@ -71,42 +91,39 @@ export default function Home() {
     const adminStatus = checkIsAdmin(address, discordId);
     setIsAdmin(adminStatus || false);
 
+    // Agar Admin hai to Data Fetch karo
     if (adminStatus) {
         const fetchAdminData = async () => {
-            // 🔥 FIX: Table name 'archives' use kar rahe hain
-            const { data: artifactsData } = await supabase
-                .from('archives') 
-                .select('*')
-                .order('created_at', { ascending: false });
-
+            // FIX: Table 'archives' se data le rahe hain
+            const { data: artifactsData } = await supabase.from('archives').select('*').order('created_at', { ascending: false });
+            
             if (artifactsData) {
                 setUserArtifacts(artifactsData);
 
-                // 🔥 LOGIC: Users Grouping (Wallet aur User ID dono handle karega)
-                const groupedMap = artifactsData.reduce((acc: any, curr: any) => {
-                    // Identity: Wallet Address priority, nahi to User ID
-                    const identity = curr.wallet_address || curr.user_id || 'unknown';
+                // FIX: User Grouping Logic (Wallet + UserID Support)
+                // Ye zaroori hai taaki list khali na dikhe
+                const groupedUsers = Object.values(artifactsData.reduce((acc: any, curr: any) => {
+                    const identity = curr.wallet_address || curr.user_id || 'unknown'; 
                     
                     if(!acc[identity]) {
                         acc[identity] = { 
                             id: identity, 
-                            artifacts: [], 
-                            isVerified: false, // Flag track karne ke liye
-                            lastActive: curr.created_at
+                            artifacts: [],
+                            isUpgraded: false // Flag for Upgrade Tab
                         };
                     }
                     
                     acc[identity].artifacts.push(curr);
                     
-                    // Agar ek bhi upload Verified hai, to User ko Verified maano
+                    // Agar verified hai to upgrade flag true karo
                     if(curr.status === 'verified') {
-                        acc[identity].isVerified = true;
+                        acc[identity].isUpgraded = true;
                     }
                     
                     return acc;
-                }, {});
-
-                setUsers(Object.values(groupedMap));
+                }, {}));
+                
+                setUsers(groupedUsers);
             }
         };
         fetchAdminData();
@@ -115,15 +132,22 @@ export default function Home() {
 
   const handleDiscordLogin = async () => {
     setAuthLoading(true);
-    await supabase.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo: window.location.origin } });
+    await supabase.auth.signInWithOAuth({
+      provider: 'discord',
+      options: { redirectTo: window.location.origin },
+    });
   };
-  const handleLogout = async () => { await supabase.auth.signOut(); setUser(null); };
 
-  // --- FILTER LOGIC (Jo section empty dikh raha tha wo ab bharega) ---
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  // --- FILTER LOGIC FOR ADMIN TABS ---
   const displayedUsers = users.filter(u => {
     if (activeTab === 'ready_for_upgrade') {
-        // Sirf wo dikhao jo Verified hain (Upgraded)
-        return u.isVerified === true;
+        // Sirf upgraded/verified users dikhao
+        return u.isUpgraded === true;
     }
     return true;
   });
@@ -148,6 +172,7 @@ export default function Home() {
                 </button>
             </Link>
           )}
+
           {user && (
             <div className="hidden md:flex items-center gap-2 text-xs text-green-400 border border-green-900 px-3 py-1 rounded-full bg-green-900/10">
                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
@@ -160,7 +185,9 @@ export default function Home() {
         </div>
       </nav>
 
+      {/* HERO SECTION */}
       <main className="max-w-6xl mx-auto p-8 mt-10">
+        
         {authLoading ? (
             <div className="flex flex-col items-center justify-center min-h-[50vh]">
                 <Loader2 className="animate-spin text-green-500 w-16 h-16 mb-4" />
@@ -189,8 +216,10 @@ export default function Home() {
                 </p>
                 </div>
 
+                {/* MAIN CARDS */}
                 <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center mb-20">
-                    {/* DISCORD CARD */}
+                    
+                    {/* LEFT: DISCORD CARD */}
                     <div className="flex-1 w-full">
                         {!user ? (
                         <div onClick={handleDiscordLogin} className="group border border-gray-800 bg-gray-900/40 p-10 rounded-2xl hover:border-indigo-500/50 transition-all cursor-pointer relative overflow-hidden h-full flex flex-col justify-between">
@@ -213,12 +242,27 @@ export default function Home() {
                                 <p className="text-green-400 text-sm font-mono tracking-wider">VERIFIED</p>
                                 </div>
                             </div>
-                            <button onClick={handleLogout} className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 px-4 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition border border-red-900/30"><LogOut size={16} /> DISCONNECT</button>
+                            <div className="space-y-3 mb-8 bg-black/30 p-4 rounded-lg border border-green-900/30">
+                                <p className="text-gray-400 text-sm">Discord Connected ✅</p>
+                                <p className="text-gray-500 text-xs truncate">ID: {user.id}</p>
                             </div>
+                            </div>
+                            <button onClick={handleLogout} className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 px-4 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition border border-red-900/30"><LogOut size={16} /> DISCONNECT</button>
                         </div>
                         )}
                     </div>
-                    {/* MANUAL UPLOAD CARD */}
+
+                    {/* DIVIDER */}
+                    <div className="flex items-center justify-center md:flex-col relative shrink-0">
+                        <div className="absolute inset-0 flex items-center justify-center md:flex-col">
+                        <div className="w-full h-px md:w-px md:h-full bg-gray-800"></div>
+                        </div>
+                        <div className="relative bg-black p-2">
+                            <span className="text-gray-500 text-xs font-bold border border-gray-800 px-3 py-2 rounded-full bg-gray-900/50 shadow-xl">OR</span>
+                        </div>
+                    </div>
+
+                    {/* RIGHT: MANUAL UPLOAD */}
                     <div className="flex-1 w-full">
                         {user ? (
                             <Link href="/upload">
@@ -246,81 +290,102 @@ export default function Home() {
                     </div>
                 </div>
 
-                {/* 🔥 ADMIN OVERWATCH CONTROLS (Updated Logic) 🔥 */}
+                {/* 🔥 ADMIN CONTROL CENTER (Updated with Fixes) 🔥 */}
                 {isAdmin && (
                   <div className="border-t border-red-900/50 pt-10 mt-10">
                     <h2 className="text-2xl font-black text-red-600 mb-6 flex items-center gap-2">
                         <ShieldAlert /> OVERWATCH CONTROLS
                     </h2>
 
+                    {/* TABS */}
                     <div className="flex gap-4 mb-6">
-                        <button onClick={() => setActiveTab('all')} className={`text-sm px-4 py-2 rounded transition border ${activeTab === 'all' ? 'bg-gray-800 text-white border-gray-600' : 'text-gray-500 border-transparent hover:border-gray-800'}`}>
-                            All Contributors ({users.length})
+                        <button onClick={() => setActiveTab('all')} className={`text-sm px-4 py-2 rounded transition ${activeTab === 'all' ? 'bg-gray-800 text-white border border-gray-600' : 'text-gray-500 border border-transparent'}`}>
+                            All Contributors
                         </button>
-                        <button onClick={() => setActiveTab('ready_for_upgrade')} className={`text-sm border px-4 py-2 rounded transition flex items-center gap-2 ${activeTab === 'ready_for_upgrade' ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'text-gray-500 border-transparent hover:text-green-400'}`}>
-                            Verified / Upgraded 🎖️
+                        <button onClick={() => setActiveTab('ready_for_upgrade')} className={`text-sm border border-green-500/30 px-4 py-2 rounded transition ${activeTab === 'ready_for_upgrade' ? 'bg-green-500/20 text-green-400' : 'text-gray-500 hover:text-green-400'}`}>
+                            Ready for Upgrade 🎖️
                         </button>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {/* LEFT: LIVE STREAM */}
+                        
+                        {/* LIST 1: INCOMING ARTIFACTS */}
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                             <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">INCOMING STREAM</h3>
-                            <div className="max-h-[400px] overflow-y-auto pr-2 space-y-2">
+                            <div className="max-h-[400px] overflow-y-auto pr-2">
+                                {userArtifacts.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No artifacts found.</p>}
                                 {userArtifacts.map((item) => (
-                                    <div key={item.id} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800">
-                                        <div className="flex items-center gap-3">
-                                            <div>
-                                                <p className="font-bold text-sm text-white truncate max-w-[150px]">{item.filename || "Unknown"}</p>
-                                                <span className={`text-[10px] px-2 py-0.5 rounded ${item.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                                    <div key={item.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
+                                        <div className="flex items-center gap-3 overflow-hidden">
+                                            <div className="text-white min-w-0">
+                                                <p className="font-bold truncate max-w-[150px]">{item.filename || "Unknown"}</p>
+                                                <span className={`text-[10px] px-2 py-0.5 rounded ${
+                                                    item.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+                                                }`}>
                                                     {item.status?.toUpperCase() || 'PENDING'}
                                                 </span>
                                             </div>
                                         </div>
-                                        <div className="flex gap-2">
-                                            {/* Delete Action */}
-                                            <button onClick={async () => {
-                                                const res = await deleteArtifact(item.id, item.file_path);
-                                                if(res.success) setUserArtifacts(prev => prev.filter(a => a.id !== item.id));
-                                            }} className="p-2 bg-red-900/20 hover:bg-red-900/50 text-red-500 rounded"><Trash2 size={14} /></button>
-                                            
-                                            {/* View Action */}
+                                        <div className="flex gap-2 shrink-0">
+                                            <button 
+                                                onClick={async () => {
+                                                    const res = await deleteArtifact(item.id, item.file_path);
+                                                    if(res.success) {
+                                                        setUserArtifacts(prev => prev.filter(a => a.id !== item.id));
+                                                    }
+                                                }}
+                                                className="p-2 bg-red-900/20 hover:bg-red-900/50 text-red-500 rounded transition"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+
                                             <Link href={`/u/${item.user_id || item.wallet_address}`} className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded">
-                                                <ArrowUpRight size={14} />
+                                                <ArrowUpRight size={16} />
                                             </Link>
                                         </div>
                                     </div>
                                 ))}
-                                {userArtifacts.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No artifacts in stream.</p>}
                             </div>
                         </div>
 
-                        {/* RIGHT: ACTIVE NODES / CONTRIBUTORS */}
+                        {/* LIST 2: USERS / CONTRIBUTORS (Fixed Grouping) */}
                         <div className="bg-gray-950 p-6 rounded-xl border border-gray-800">
                              <h3 className="text-gray-400 font-bold mb-4 text-xs tracking-widest">
-                                {activeTab === 'ready_for_upgrade' ? 'VERIFIED NODES (UPGRADED)' : 'ACTIVE NODES'}
+                                {activeTab === 'ready_for_upgrade' ? 'UPGRADED NODES (VERIFIED)' : 'ACTIVE NODES'}
                              </h3>
-                             <div className="max-h-[400px] overflow-y-auto pr-2 space-y-2">
+                             <div className="max-h-[400px] overflow-y-auto pr-2">
+                                {displayedUsers.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No contributors found.</p>}
                                 {displayedUsers.map(u => (
-                                    <div key={u.id} className="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-800 hover:border-gray-600 transition">
+                                    <div key={u.id} className="flex justify-between items-center bg-gray-900 p-4 rounded mb-2 border border-gray-800">
                                         <div>
-                                            <p className="font-mono text-xs text-green-500 mb-1">{u.id.startsWith('0x') ? 'WALLET' : 'DISCORD USER'}</p>
+                                            <p className={`font-mono text-xs mb-1 ${u.isUpgraded ? 'text-yellow-500 font-bold' : 'text-gray-500'}`}>
+                                                {u.isUpgraded ? '★ UPGRADED' : 'CONTRIBUTOR'}
+                                            </p>
                                             <p className="font-bold text-sm text-white break-all">{u.id}</p>
                                             <p className="text-xs text-gray-500 mt-1">{u.artifacts.length} Uploads</p>
                                         </div>
                                         
                                         <Link href={`/u/${u.id}`}>
-                                            <button className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 transition ${u.isVerified ? 'bg-green-500 text-black hover:bg-green-400' : 'bg-gray-800 text-white hover:bg-gray-700'}`}>
-                                                {u.isVerified ? 'VERIFIED ✅' : 'INSPECT 🔍'}
+                                            <button className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 transition ${u.isUpgraded ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-white'}`}>
+                                                INSPECT 🔍
                                             </button>
                                         </Link>
                                     </div>
                                 ))}
-                                {displayedUsers.length === 0 && <p className="text-gray-600 text-sm p-4 text-center">No contributors found in this category.</p>}
                              </div>
                         </div>
+
                     </div>
                   </div>
+                )}
+
+                {/* FOOTER */}
+                {(user || isConnected) && (
+                <div className="text-center mt-12 pb-10">
+                    <Link href={`/u/${user ? user.id : address}`} className="inline-flex items-center gap-2 text-gray-400 hover:text-green-500 transition border-b border-transparent hover:border-green-500 pb-1">
+                    View My Public Portfolio &rarr;
+                    </Link>
+                </div>
                 )}
             </>
         )}
